@@ -5,6 +5,12 @@ alter table follows
 alter table proof_posts
   add column if not exists media_type text,
   add column if not exists source text not null default 'fitcountable',
+  add column if not exists meal_id uuid references meals(id) on delete set null,
+  add column if not exists proof_kind text not null default 'workout',
+  add column if not exists detail_lines jsonb not null default '[]'::jsonb,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table accountability_settings
   add column if not exists updated_at timestamptz not null default now();
 
 create or replace function public.fc_are_friends(a uuid, b uuid)
@@ -258,11 +264,15 @@ $$;
 
 create or replace function public.fc_create_proof_post(
   p_workout_id uuid default null,
+  p_meal_id uuid default null,
   p_caption text default null,
   p_visibility text default 'friends',
   p_media_url text default null,
   p_media_type text default null,
-  p_source text default 'fitcountable'
+  p_source text default 'fitcountable',
+  p_proof_kind text default 'workout',
+  p_detail_lines jsonb default '[]'::jsonb,
+  p_media_base64 text default null
 )
 returns jsonb
 language plpgsql
@@ -273,6 +283,8 @@ declare
   v_user_id uuid := auth.uid();
   v_post proof_posts%rowtype;
   v_visibility text := lower(trim(coalesce(p_visibility, 'friends')));
+  v_proof_kind text := lower(trim(coalesce(p_proof_kind, 'workout')));
+  v_media_url text := nullif(trim(p_media_url), '');
 begin
   if v_user_id is null then
     raise exception 'Unauthorized';
@@ -280,14 +292,37 @@ begin
   if v_visibility not in ('private', 'friends', 'public') then
     v_visibility := 'friends';
   end if;
+  if v_proof_kind not in ('workout', 'food', 'general') then
+    v_proof_kind := 'general';
+  end if;
   if p_workout_id is not null and not exists (
     select 1 from workouts where id = p_workout_id and user_id = v_user_id
   ) then
     raise exception 'Workout not found';
   end if;
+  if p_meal_id is not null and not exists (
+    select 1 from meals where id = p_meal_id and user_id = v_user_id
+  ) then
+    raise exception 'Meal not found';
+  end if;
 
-  insert into proof_posts (user_id, workout_id, media_url, media_type, caption, visibility, source)
-  values (v_user_id, p_workout_id, nullif(trim(p_media_url), ''), nullif(trim(p_media_type), ''), nullif(trim(p_caption), ''), v_visibility, coalesce(nullif(trim(p_source), ''), 'fitcountable'))
+  if v_media_url is null and nullif(trim(p_media_base64), '') is not null then
+    v_media_url := 'data:' || coalesce(nullif(trim(p_media_type), ''), 'image/jpeg') || ';base64,' || trim(p_media_base64);
+  end if;
+
+  insert into proof_posts (user_id, workout_id, meal_id, media_url, media_type, caption, visibility, source, proof_kind, detail_lines)
+  values (
+    v_user_id,
+    p_workout_id,
+    p_meal_id,
+    v_media_url,
+    nullif(trim(p_media_type), ''),
+    nullif(trim(p_caption), ''),
+    v_visibility,
+    coalesce(nullif(trim(p_source), ''), 'fitcountable'),
+    v_proof_kind,
+    coalesce(p_detail_lines, '[]'::jsonb)
+  )
   returning * into v_post;
 
   return jsonb_build_object(
@@ -296,13 +331,20 @@ begin
     'display_name', coalesce((select display_name from profiles where user_id = v_user_id), 'Fitcountable User'),
     'avatar_url', (select avatar_url from profiles where user_id = v_user_id),
     'workout_id', v_post.workout_id,
-    'workout_title', coalesce((select title from workouts where id = v_post.workout_id), 'Workout proof'),
+    'meal_id', v_post.meal_id,
+    'workout_title',
+      case
+        when v_post.proof_kind = 'food' then coalesce((select initcap(meal_type) || ' proof' from meals where id = v_post.meal_id), 'Food proof')
+        else coalesce((select title from workouts where id = v_post.workout_id), 'Gym proof')
+      end,
     'duration_minutes', (select duration_minutes from workouts where id = v_post.workout_id),
     'set_count', coalesce((select count(*)::int from workout_sets where workout_id = v_post.workout_id), 0),
     'caption', v_post.caption,
     'visibility', v_post.visibility,
     'media_url', v_post.media_url,
     'media_type', v_post.media_type,
+    'proof_kind', v_post.proof_kind,
+    'detail_lines', v_post.detail_lines,
     'created_at', v_post.created_at,
     'relationship', 'own'
   );
@@ -329,13 +371,20 @@ begin
       'display_name', coalesce(p.display_name, 'Fitcountable User'),
       'avatar_url', p.avatar_url,
       'workout_id', pp.workout_id,
-      'workout_title', coalesce(w.title, 'Workout proof'),
+      'meal_id', pp.meal_id,
+      'workout_title',
+        case
+          when pp.proof_kind = 'food' then coalesce(initcap(m.meal_type) || ' proof', 'Food proof')
+          else coalesce(w.title, 'Gym proof')
+        end,
       'duration_minutes', w.duration_minutes,
       'set_count', coalesce(ws.set_count, 0),
       'caption', pp.caption,
       'visibility', pp.visibility,
       'media_url', pp.media_url,
       'media_type', pp.media_type,
+      'proof_kind', pp.proof_kind,
+      'detail_lines', pp.detail_lines,
       'created_at', pp.created_at,
       'relationship',
         case
@@ -347,6 +396,7 @@ begin
     from proof_posts pp
     join profiles p on p.user_id = pp.user_id
     left join workouts w on w.id = pp.workout_id
+    left join meals m on m.id = pp.meal_id
     left join (
       select workout_id, count(*)::int as set_count
       from workout_sets
@@ -360,6 +410,46 @@ begin
       )
     limit 50
   ), '[]'::jsonb);
+end;
+$$;
+
+create or replace function public.fc_set_accountability_settings(
+  p_enabled boolean default null,
+  p_visibility_scope text default null,
+  p_proof_required boolean default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_scope text := lower(trim(coalesce(p_visibility_scope, 'friends')));
+  v_settings accountability_settings%rowtype;
+begin
+  if v_user_id is null then
+    raise exception 'Unauthorized';
+  end if;
+  if v_scope not in ('private', 'friends', 'public') then
+    v_scope := 'friends';
+  end if;
+
+  insert into accountability_settings (user_id, enabled, visibility_scope, proof_required, updated_at)
+  values (v_user_id, coalesce(p_enabled, false), v_scope, coalesce(p_proof_required, false), now())
+  on conflict (user_id) do update set
+    enabled = coalesce(p_enabled, accountability_settings.enabled),
+    visibility_scope = coalesce(v_scope, accountability_settings.visibility_scope),
+    proof_required = coalesce(p_proof_required, accountability_settings.proof_required),
+    updated_at = now()
+  returning * into v_settings;
+
+  return jsonb_build_object(
+    'ok', true,
+    'enabled', v_settings.enabled,
+    'visibility_scope', v_settings.visibility_scope,
+    'proof_required', v_settings.proof_required
+  );
 end;
 $$;
 
@@ -406,7 +496,16 @@ begin
     ),
     'stats', jsonb_build_object(
       'workouts', (select count(*) from workouts where user_id = p_target_user_id),
-      'proof_posts', (select count(*) from proof_posts where user_id = p_target_user_id and (v_can_view or visibility = 'public'))
+      'proof_posts', (
+        select count(*)
+        from proof_posts
+        where user_id = p_target_user_id
+          and (
+            p_target_user_id = v_user_id
+            or visibility = 'public'
+            or (visibility = 'friends' and public.fc_are_friends(v_user_id, p_target_user_id))
+          )
+      )
     ),
     'proof_posts', case when v_can_view then public.fc_proof_feed(p_target_user_id) else '[]'::jsonb end
   );

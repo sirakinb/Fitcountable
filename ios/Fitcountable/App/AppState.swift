@@ -160,7 +160,7 @@ final class AppState: ObservableObject {
             authSession = session
             apiClient.authToken = session.accessToken
             authStatusMessage = "Signed in as \(session.email). Confirmed logs will sync."
-            _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode)
+            _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
             await refreshPremiumStatus()
             await refreshSocial()
             saveSnapshot()
@@ -178,7 +178,7 @@ final class AppState: ObservableObject {
                 authSession = session
                 apiClient.authToken = session.accessToken
                 authStatusMessage = "Signed in with Apple as \(displayEmail)."
-                _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode)
+                _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
                 await refreshPremiumStatus()
                 await refreshSocial()
                 saveSnapshot()
@@ -279,11 +279,18 @@ final class AppState: ObservableObject {
     func updatePrivacyMode(_ mode: PrivacyMode) {
         profile.privacyMode = mode
         saveSnapshot()
+        Task {
+            _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: mode, avatarData: profilePhotoData)
+            _ = try? await apiClient.setAccountabilitySettings(enabled: accountabilityEnabled, visibility: visibilityFromPrivacyMode(mode))
+        }
     }
 
     func updateProfilePhoto(_ data: Data?) {
         profilePhotoData = data
         saveSnapshot()
+        Task {
+            _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: data)
+        }
     }
 
     func confirm(_ proposal: ActionProposal, rawText: String? = nil) {
@@ -462,9 +469,18 @@ final class AppState: ObservableObject {
         let fallbackCaption = trimmed.isEmpty
             ? (proofKind == "food" ? "Food accountability proof." : "Proof from today's training.")
             : trimmed
+        let detailLines = proofDetailLines(workout: workout, meal: meal, proofKind: proofKind)
         do {
-            let post = try await apiClient.createProofPost(workoutId: nil, caption: fallbackCaption, visibility: visibility)
-            let hydratedPost = enriched(post, workout: workout, meal: meal, proofKind: proofKind)
+            let post = try await apiClient.createProofPost(
+                workoutId: nil,
+                mealId: nil,
+                caption: fallbackCaption,
+                visibility: visibility,
+                proofKind: proofKind,
+                detailLines: detailLines,
+                photoData: photoData
+            )
+            let hydratedPost = enriched(post, workout: workout, meal: meal, proofKind: proofKind, detailLines: detailLines)
             proofPosts.insert(hydratedPost, at: 0)
             if let photoData {
                 proofMediaData[hydratedPost.id] = photoData
@@ -485,14 +501,31 @@ final class AppState: ObservableObject {
         }
     }
 
-    func removeFriend(_ friend: FriendProfile) {
-        friends.removeAll { $0.id == friend.id }
-        saveSnapshot()
+    func removeFriend(_ friend: FriendProfile) async {
+        guard let remoteUserId = friend.remoteUserId else {
+            friends.removeAll { $0.id == friend.id }
+            saveSnapshot()
+            return
+        }
+        do {
+            _ = try await apiClient.respondFollow(userId: remoteUserId, action: "remove")
+            socialStatusMessage = "\(friend.name) removed."
+            await refreshSocial()
+        } catch {
+            socialStatusMessage = "Could not remove friend: \(error.localizedDescription)"
+        }
     }
 
     func setAccountabilityEnabled(_ enabled: Bool) {
         accountabilityEnabled = enabled
         saveSnapshot()
+        Task {
+            do {
+                _ = try await apiClient.setAccountabilitySettings(enabled: enabled, visibility: visibilityFromPrivacyMode(profile.privacyMode))
+            } catch {
+                socialStatusMessage = "Accountability setting will retry when sync is available."
+            }
+        }
     }
 
     func attachProofNote(_ caption: String, visibility: Visibility, workout: WorkoutLog? = nil) {
@@ -518,8 +551,8 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func enriched(_ post: SocialProofPost, workout: WorkoutLog?, meal: MealLog?, proofKind: String) -> SocialProofPost {
-        guard post.workoutTitle == "Workout proof" else { return post }
+    private func enriched(_ post: SocialProofPost, workout: WorkoutLog?, meal: MealLog?, proofKind: String, detailLines: [String]) -> SocialProofPost {
+        guard post.detailLines?.isEmpty != false || post.proofKind == nil || post.workoutTitle == "Gym proof" || post.workoutTitle == "Workout proof" else { return post }
         let title = proofTitle(workout: workout, meal: meal, proofKind: proofKind)
         return SocialProofPost(
             id: post.id,
@@ -527,6 +560,7 @@ final class AppState: ObservableObject {
             displayName: post.displayName,
             avatarURL: post.avatarURL,
             workoutId: workout?.id.uuidString,
+            mealId: meal?.id.uuidString,
             workoutTitle: title,
             durationMinutes: workout?.durationMinutes,
             setCount: workout?.sets.count ?? 0,
@@ -537,7 +571,7 @@ final class AppState: ObservableObject {
             createdAt: post.createdAt,
             relationship: post.relationship,
             proofKind: proofKind,
-            detailLines: proofDetailLines(workout: workout, meal: meal, proofKind: proofKind)
+            detailLines: post.detailLines?.isEmpty == false ? post.detailLines : detailLines
         )
     }
 
@@ -548,6 +582,7 @@ final class AppState: ObservableObject {
             displayName: profile.displayName,
             avatarURL: nil,
             workoutId: workout?.id.uuidString,
+            mealId: meal?.id.uuidString,
             workoutTitle: proofTitle(workout: workout, meal: meal, proofKind: proofKind),
             durationMinutes: workout?.durationMinutes,
             setCount: workout?.sets.count ?? 0,
@@ -583,6 +618,17 @@ final class AppState: ObservableObject {
         guard let workout else { return ["Gym accountability proof"] }
         let setLines = workout.compactSetSummaries.prefix(4).map { $0 }
         return setLines.isEmpty ? ["\(workout.durationMinutes)m workout logged"] : Array(setLines)
+    }
+
+    private func visibilityFromPrivacyMode(_ mode: PrivacyMode) -> Visibility {
+        switch mode {
+        case .privateProfile:
+            .privateOnly
+        case .friendsOnly:
+            .friends
+        case .publicProfile:
+            .publicPost
+        }
     }
 
     func setPremiumPreviewActive() {

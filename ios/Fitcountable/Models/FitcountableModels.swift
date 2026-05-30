@@ -322,6 +322,7 @@ struct SocialProofPost: Identifiable, Codable, Equatable {
     var displayName: String
     var avatarURL: URL?
     var workoutId: String?
+    var mealId: String?
     var workoutTitle: String
     var durationMinutes: Int?
     var setCount: Int
@@ -340,6 +341,7 @@ struct SocialProofPost: Identifiable, Codable, Equatable {
         case displayName = "display_name"
         case avatarURL = "avatar_url"
         case workoutId = "workout_id"
+        case mealId = "meal_id"
         case workoutTitle = "workout_title"
         case durationMinutes = "duration_minutes"
         case setCount = "set_count"
@@ -359,6 +361,7 @@ struct SocialProofPost: Identifiable, Codable, Equatable {
         displayName: String,
         avatarURL: URL? = nil,
         workoutId: String? = nil,
+        mealId: String? = nil,
         workoutTitle: String,
         durationMinutes: Int? = nil,
         setCount: Int = 0,
@@ -376,6 +379,7 @@ struct SocialProofPost: Identifiable, Codable, Equatable {
         self.displayName = displayName
         self.avatarURL = avatarURL
         self.workoutId = workoutId
+        self.mealId = mealId
         self.workoutTitle = workoutTitle
         self.durationMinutes = durationMinutes
         self.setCount = setCount

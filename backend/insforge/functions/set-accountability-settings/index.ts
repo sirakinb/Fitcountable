@@ -7,17 +7,10 @@ async function socialHandler(req: Request, run: (token: string, body: Record<str
 
 export default async function(req: Request): Promise<Response> {
   return socialHandler(req, async (token, body) => ({
-    proof_post: await rpc(token, "fc_create_proof_post", {
-      p_workout_id: body.workout_id ?? body.workoutId ?? null,
-      p_meal_id: body.meal_id ?? body.mealId ?? null,
-      p_caption: body.caption ?? null,
-      p_visibility: body.visibility ?? "friends",
-      p_media_url: body.media_url ?? body.mediaURL ?? null,
-      p_media_type: body.media_type ?? body.mediaType ?? null,
-      p_source: body.source ?? "fitcountable",
-      p_proof_kind: body.proof_kind ?? body.proofKind ?? "workout",
-      p_detail_lines: body.detail_lines ?? body.detailLines ?? [],
-      p_media_base64: body.media_base64 ?? body.mediaBase64 ?? null
+    settings: await rpc(token, "fc_set_accountability_settings", {
+      p_enabled: body.enabled ?? null,
+      p_visibility_scope: body.visibility_scope ?? body.visibilityScope ?? null,
+      p_proof_required: body.proof_required ?? body.proofRequired ?? null
     })
   }));
 }

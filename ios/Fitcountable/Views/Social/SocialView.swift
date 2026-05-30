@@ -284,11 +284,7 @@ struct SocialView: View {
                     FriendAccountabilityRow(friend: friend) {
                         Task { await appState.sendNudge(to: friend) }
                     } remove: {
-                        if let userId = friend.remoteUserId {
-                            Task { await appState.respondToFollow(userId: userId, action: "remove") }
-                        } else {
-                            appState.removeFriend(friend)
-                        }
+                        Task { await appState.removeFriend(friend) }
                     }
                 }
             }
@@ -382,6 +378,7 @@ private struct ProofPostCard: View {
             HStack(alignment: .top) {
                 ProfilePhotoView(
                     imageData: post.relationship == "own" ? profilePhotoData : nil,
+                    imageURL: post.avatarURL,
                     fallback: post.displayName,
                     size: 42,
                     color: post.relationship == "own" ? .fitInk : .fitBlue
@@ -422,10 +419,21 @@ private struct ProofPostCard: View {
             }
 
             ZStack(alignment: .leading) {
-                if let proofPhotoData, let image = UIImage(data: proofPhotoData) {
+                if let imageData = proofPhotoData ?? post.mediaURL?.dataURLImageData, let image = UIImage(data: imageData) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                } else if let mediaURL = post.mediaURL {
+                    AsyncImage(url: mediaURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        default:
+                            LinearGradient(colors: [Color.fitBlue.opacity(0.18), Color.fitGreen.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        }
+                    }
                 } else {
                     LinearGradient(colors: [Color.fitBlue.opacity(0.18), Color.fitGreen.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
@@ -435,8 +443,8 @@ private struct ProofPostCard: View {
                         .foregroundStyle(Color.fitGreen)
                     Text(post.caption?.isEmpty == false ? post.caption! : "Workout proof logged.")
                         .font(.headline)
-                        .foregroundStyle(proofPhotoData == nil ? Color.fitInk : .white)
-                        .shadow(color: proofPhotoData == nil ? .clear : .black.opacity(0.45), radius: 8, x: 0, y: 2)
+                        .foregroundStyle(hasProofImage ? .white : Color.fitInk)
+                        .shadow(color: hasProofImage ? .black.opacity(0.45) : .clear, radius: 8, x: 0, y: 2)
                         .lineLimit(3)
                 }
                 .padding()
@@ -452,6 +460,10 @@ private struct ProofPostCard: View {
         guard post.createdAt != nil else { return "Now" }
         return "Posted"
     }
+
+    private var hasProofImage: Bool {
+        proofPhotoData != nil || post.mediaURL != nil
+    }
 }
 
 private struct ShareLinkButton: View {
@@ -462,7 +474,7 @@ private struct ShareLinkButton: View {
 
     var body: some View {
         Button {
-            let image = InstagramStoryShareService.storyImage(for: post, proofPhotoData: proofPhotoData)
+            let image = InstagramStoryShareService.storyImage(for: post, proofPhotoData: proofPhotoData ?? post.mediaURL?.dataURLImageData)
             if InstagramStoryShareService.shareToInstagram(image: image) == false {
                 fallbackImage = image
                 showingFallback = true

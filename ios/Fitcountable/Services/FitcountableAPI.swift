@@ -10,14 +10,15 @@ protocol FitcountableAPI {
     func signInWithApple(userIdentifier: String, email: String?, displayName: String) async throws -> AuthSession
     func confirmAction(rawText: String, proposal: ActionProposal) async throws -> ActionConfirmation
     func searchUsers(query: String) async throws -> [FriendSearchResult]
-    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode) async throws -> FriendSearchResult
+    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode, avatarData: Data?) async throws -> FriendSearchResult
     func friendsList() async throws -> FriendsListResponse
     func followUser(targetUserId: String) async throws -> SocialActionResult
     func respondFollow(userId: String, action: String) async throws -> SocialActionResult
-    func createProofPost(workoutId: String?, caption: String, visibility: Visibility) async throws -> SocialProofPost
+    func createProofPost(workoutId: String?, mealId: String?, caption: String, visibility: Visibility, proofKind: String, detailLines: [String], photoData: Data?) async throws -> SocialProofPost
     func proofFeed(targetUserId: String?) async throws -> [SocialProofPost]
     func profileView(targetUserId: String) async throws -> SocialProfileView
     func sendNudge(to friend: FriendProfile, message: String) async throws -> NudgeResult
+    func setAccountabilitySettings(enabled: Bool, visibility: Visibility) async throws -> SocialActionResult
 }
 
 enum APIError: LocalizedError {
@@ -62,7 +63,7 @@ struct LocalMockAPI: FitcountableAPI {
         throw APIError.unauthenticated
     }
 
-    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode) async throws -> FriendSearchResult {
+    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode, avatarData: Data?) async throws -> FriendSearchResult {
         throw APIError.unauthenticated
     }
 
@@ -78,7 +79,7 @@ struct LocalMockAPI: FitcountableAPI {
         throw APIError.unauthenticated
     }
 
-    func createProofPost(workoutId: String?, caption: String, visibility: Visibility) async throws -> SocialProofPost {
+    func createProofPost(workoutId: String?, mealId: String?, caption: String, visibility: Visibility, proofKind: String, detailLines: [String], photoData: Data?) async throws -> SocialProofPost {
         throw APIError.unauthenticated
     }
 
@@ -91,6 +92,10 @@ struct LocalMockAPI: FitcountableAPI {
     }
 
     func sendNudge(to friend: FriendProfile, message: String) async throws -> NudgeResult {
+        throw APIError.unauthenticated
+    }
+
+    func setAccountabilitySettings(enabled: Bool, visibility: Visibility) async throws -> SocialActionResult {
         throw APIError.unauthenticated
     }
 
@@ -336,14 +341,14 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         return try JSONDecoder.fitcountable.decode(SearchUsersResponse.self, from: data).users
     }
 
-    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode) async throws -> FriendSearchResult {
+    func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode, avatarData: Data? = nil) async throws -> FriendSearchResult {
         guard let authToken else {
-            return try await fallback.bootstrapProfile(displayName: displayName, goalType: goalType, privacyMode: privacyMode)
+            return try await fallback.bootstrapProfile(displayName: displayName, goalType: goalType, privacyMode: privacyMode, avatarData: avatarData)
         }
         let response: BootstrapProfileResponse = try await postFunction(
             "bootstrap-profile",
             token: authToken,
-            body: BootstrapProfileRequest(displayName: displayName, goalType: goalType.rawValue, privacyMode: privacyMode.remoteValue)
+            body: BootstrapProfileRequest(displayName: displayName, goalType: goalType.rawValue, privacyMode: privacyMode.remoteValue, avatarURL: avatarData?.jpegDataURLString)
         )
         return response.profile
     }
@@ -371,11 +376,24 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         return response.result
     }
 
-    func createProofPost(workoutId: String?, caption: String, visibility: Visibility) async throws -> SocialProofPost {
+    func createProofPost(workoutId: String?, mealId: String?, caption: String, visibility: Visibility, proofKind: String, detailLines: [String], photoData: Data?) async throws -> SocialProofPost {
         guard let authToken else {
-            return try await fallback.createProofPost(workoutId: workoutId, caption: caption, visibility: visibility)
+            return try await fallback.createProofPost(workoutId: workoutId, mealId: mealId, caption: caption, visibility: visibility, proofKind: proofKind, detailLines: detailLines, photoData: photoData)
         }
-        let response: CreateProofPostResponse = try await postFunction("create-proof-post", token: authToken, body: CreateProofPostRequest(workoutId: workoutId, caption: caption, visibility: visibility.remoteValue))
+        let response: CreateProofPostResponse = try await postFunction(
+            "create-proof-post",
+            token: authToken,
+            body: CreateProofPostRequest(
+                workoutId: workoutId,
+                mealId: mealId,
+                caption: caption,
+                visibility: visibility.remoteValue,
+                proofKind: proofKind,
+                detailLines: detailLines,
+                mediaType: photoData == nil ? nil : "image/jpeg",
+                mediaBase64: photoData?.base64EncodedString()
+            )
+        )
         return response.proofPost
     }
 
@@ -410,6 +428,18 @@ final class RemoteFitcountableAPI: FitcountableAPI {
             return try await fallback.sendNudge(to: friend, message: message)
         }
         return try JSONDecoder.fitcountable.decode(NudgeResult.self, from: data)
+    }
+
+    func setAccountabilitySettings(enabled: Bool, visibility: Visibility) async throws -> SocialActionResult {
+        guard let authToken else {
+            return try await fallback.setAccountabilitySettings(enabled: enabled, visibility: visibility)
+        }
+        let response: AccountabilitySettingsResponse = try await postFunction(
+            "set-accountability-settings",
+            token: authToken,
+            body: AccountabilitySettingsRequest(enabled: enabled, visibilityScope: visibility.remoteValue, proofRequired: false)
+        )
+        return SocialActionResult(ok: response.settings.ok, status: response.settings.enabled ? "enabled" : "disabled")
     }
 
     private func postFunction<RequestBody: Encodable, ResponseBody: Decodable>(_ slug: String, token: String, body: RequestBody) async throws -> ResponseBody {
@@ -507,6 +537,7 @@ private struct BootstrapProfileRequest: Encodable {
     var displayName: String
     var goalType: String
     var privacyMode: String
+    var avatarURL: String?
 }
 
 private struct BootstrapProfileResponse: Decodable {
@@ -533,8 +564,13 @@ private struct SocialResultResponse: Decodable {
 
 private struct CreateProofPostRequest: Encodable {
     var workoutId: String?
+    var mealId: String?
     var caption: String
     var visibility: String
+    var proofKind: String
+    var detailLines: [String]
+    var mediaType: String?
+    var mediaBase64: String?
 }
 
 private struct CreateProofPostResponse: Decodable {
@@ -560,6 +596,23 @@ private struct ProofFeedResponse: Decodable {
 struct NudgeResult: Codable, Equatable {
     var ok: Bool
     var status: String
+}
+
+private struct AccountabilitySettingsRequest: Encodable {
+    var enabled: Bool
+    var visibilityScope: String
+    var proofRequired: Bool
+}
+
+private struct AccountabilitySettingsResponse: Decodable {
+    var settings: AccountabilitySettingsResult
+}
+
+private struct AccountabilitySettingsResult: Decodable {
+    var ok: Bool
+    var enabled: Bool
+    var visibilityScope: String
+    var proofRequired: Bool
 }
 
 private struct RemoteActionProposal: Decodable {
@@ -699,5 +752,11 @@ extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+extension Data {
+    var jpegDataURLString: String {
+        "data:image/jpeg;base64,\(base64EncodedString())"
     }
 }

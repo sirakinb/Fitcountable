@@ -131,9 +131,15 @@ create table if not exists proof_posts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   workout_id uuid references workouts(id) on delete set null,
+  meal_id uuid references meals(id) on delete set null,
   media_url text,
+  media_type text,
   caption text,
   visibility text not null default 'friends',
+  source text not null default 'fitcountable',
+  proof_kind text not null default 'workout',
+  detail_lines jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 

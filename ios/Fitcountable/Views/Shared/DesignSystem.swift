@@ -46,6 +46,7 @@ extension Color {
 
 struct ProfilePhotoView: View {
     var imageData: Data?
+    var imageURL: URL? = nil
     var fallback: String
     var size: CGFloat
     var color: Color = .fitBlue
@@ -56,14 +57,44 @@ struct ProfilePhotoView: View {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
+            } else if let data = imageURL?.dataURLImageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            } else if let imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        fallbackCircle
+                    }
+                }
             } else {
-                Circle()
-                    .fill(color.opacity(0.14))
-                    .overlay(Text(String(fallback.prefix(1))).font(.headline.bold()).foregroundStyle(color))
+                fallbackCircle
             }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+    }
+
+    private var fallbackCircle: some View {
+        Circle()
+            .fill(color.opacity(0.14))
+            .overlay(Text(String(fallback.prefix(1))).font(.headline.bold()).foregroundStyle(color))
+    }
+}
+
+extension URL {
+    var dataURLImageData: Data? {
+        guard absoluteString.hasPrefix("data:"),
+              let commaIndex = absoluteString.firstIndex(of: ",") else {
+            return nil
+        }
+        let encoded = String(absoluteString[absoluteString.index(after: commaIndex)...])
+        return Data(base64Encoded: encoded)
     }
 }
 
