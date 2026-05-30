@@ -1,0 +1,10 @@
+{
+  "scannedAt": "2026-05-22T21:20:00-04:00",
+  "framework": "Next.js app router",
+  "fontStack": "system/Inter-style stack via --font-body",
+  "palette": "CSS custom properties in web/app/styles.css",
+  "motion": "motion-cut",
+  "spacing": "clamp-based page spacing plus responsive sections",
+  "preserved": ["Next.js", "CSS custom properties", "system font stack"],
+  "introduced": ["Hallmark Workbench/Index hybrid macrostructure", "responsive non-negotiables", "token-locked styling"]
+}

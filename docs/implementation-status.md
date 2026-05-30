@@ -1,0 +1,270 @@
+# Fitcountable Implementation Status
+
+## Current State
+
+- Greenfield monorepo created at `/Users/sirakinb/Documents/Projects/fitcountable`.
+- iOS app is generated from `ios/project.yml` using XcodeGen.
+- SwiftUI app includes onboarding, dashboard, logging, AI command review, social/accountability, profile, and paywall surfaces.
+- Backend package defines TypeScript contracts and handlers for command parsing, confirmation, nutrition estimates, plans, nudges, RevenueCat webhooks, user search, dashboard, and support.
+- Insforge project is linked, database schema is applied, and `proof-media` private storage bucket exists.
+- Insforge edge functions are defined under `backend/insforge/functions` and deployed:
+  - `parse-command`
+  - `dashboard`
+  - `confirm-action`
+  - `estimate-nutrition`
+  - `generate-plan`
+  - `send-nudge`
+  - `search-users`
+  - `create-support-ticket`
+  - `revenuecat-webhook`
+- iOS app command parsing is pointed at the verified Insforge project host:
+  `https://hxvc7grj.us-east.insforge.app/functions`.
+- `parse-command` is deployed with Vercel AI Gateway support, Kimi K-2.6 model configuration, schema normalization, and a six-second fast-parser fallback when the gateway is slow or unavailable.
+- iOS social/accountability now uses the backend search/nudge paths when the user is signed in, with local fallbacks for unsigned demo use.
+- Web landing, privacy, terms, and support pages are deployed publicly on Vercel:
+  - Production alias: `https://web-app-build-26.vercel.app`
+  - Deployment URL: `https://web-qd1311kqa-app-build-26.vercel.app`
+- Full local verification passes with `./scripts/verify-local.sh` as of May 22, 2026 at 11:33 PM ET.
+- Runtime smoke test installs and launches the iOS app on simulator `FitcountableSmoke`.
+  Latest screenshot artifact: `artifacts/fitcountable-fast-parser-ready.png`.
+- Parser smoke tests verified contract-safe meal and workout responses from:
+  `https://hxvc7grj.us-east.insforge.app/functions/parse-command`.
+- App Store metadata bundle is staged under `appstore/`, including English metadata, review notes, subscription product plan, and screenshot plan.
+- App icon asset catalog now includes the selected generated mascot icon at
+  `ios/Fitcountable/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`.
+- Non-uploading release preflight has passed:
+  - App Store Connect API key validates.
+  - Public landing/privacy/terms/support URLs return HTTP 200.
+  - Simulator build, backend build/audit, and web build/audit pass.
+  - Release archive succeeds at `artifacts/Fitcountable.xcarchive`.
+  - App Store Connect IPA export succeeds at `artifacts/export-app-store/Fitcountable.ipa`.
+  - Export uses Cloud Managed Apple Distribution and App Store provisioning profile for `com.pentridgemedia.fitcountable`.
+- Latest refreshed archive/export completed after backend/social, onboarding layout, and Info.plist package type fixes on May 22, 2026 at 10:49 PM.
+- Current simulator screenshot artifact with the fixed onboarding welcome layout:
+  `artifacts/app-store-screenshots/fitcountable-current.png`.
+- Mobbin MCP reference pass was run against MyFitnessPal, Fitbod, and Hevy iOS screens for nutrition dashboard, meal diary, workout logging, streak, and social proof patterns.
+- Final App Store screenshot assets are staged at `artifacts/app-store-screenshots/final/`:
+  - `01-onboarding-plan.png`
+  - `02-today-dashboard.png`
+  - `03-ai-meal-estimate.png`
+  - `04-workout-log.png`
+  - `05-accountability.png`
+  - `06-premium-paywall.png`
+  - All final screenshots are `1320x2868` iPhone 6.9-inch captures with proofread marketing copy.
+- Screenshot capture mode now skips speech authorization prompts only when `FITCOUNTABLE_SCREENSHOT` is present, so App Store screenshots render the app UI without system dialogs while normal runtime voice behavior is unchanged.
+- Post-test blocker fixes are implemented locally for build `0.1.0 (2)`:
+  - Onboarding no longer uses a paged `TabView`, so goal selection is a direct tap target.
+  - Onboarding starts free and no longer displays a premium/paywall card before app use.
+  - The first onboarding and first-plan visuals use the selected mascot icon instead of the previous generated abstract image.
+  - Nutrition onboarding now has selectable styles and editable calorie/protein/carbs/fat targets.
+  - Dashboard no longer requests speech recognition automatically on first render; microphone/speech permission is deferred until the user taps voice input.
+  - New users start with empty workout, meal, and friend data instead of sample logs.
+  - Accountability mode persists its toggle, proof note visibility, local friend/fallback nudges, and backend nudge/search paths when authenticated.
+- Additional build `0.1.0 (2)` feedback fixes are implemented locally:
+  - Added a native splash screen with the selected mascot logo.
+  - Moved the welcome-screen content lower and kept the bottom continue control anchored consistently.
+  - Removed demo email/password login from onboarding; Sign in with Apple is the primary onboarding auth path.
+  - Goal-specific onboarding plan labels now change with the selected main goal instead of always saying "Strength-first routine".
+  - Added a warm accountability illustration for onboarding screens with empty upper space.
+  - Reworked first-plan copy to position the app as free to start without forcing a paywall before use.
+  - Added global command-processing state so AI command submissions show progress and no longer leave stale "Parsing command..." cards.
+  - Today food log buttons now open the food tab directly.
+  - Profile paywall now uses the mascot visual, explains Premium inclusions, and aligns prices with the approved defaults.
+  - Support/privacy/terms links are grouped into clearer policy rows.
+- May 23, 2026 follow-up feedback fixes are implemented locally:
+  - Replaced the drawn accountability people illustration with a generated photoreal accountability image in `AccountabilityHero.imageset`.
+  - Removed user-facing internal phrases such as "Agent-ready command workflow", "Parsing command", and raw action labels like `log_meal`.
+  - AI review cards now ask for missing meal/workout details in plain language and provide a follow-up field to update the estimate.
+  - Premium copy was rewritten to explain user value without "workflow" or "agentic" phrasing.
+  - Profile privacy selection now persists and explains Private, Friends only, and Public modes.
+  - Social proof visibility now explains what Private, Friends, and Public proof posts mean.
+  - Added a raised center microphone button above the AI tab for voice-first logging.
+- May 23, 2026 simulator polish:
+  - Replaced the training/weekly-target onboarding image with a dedicated hyperrealistic goal-setting image in `WeeklyTargetHero.imageset`.
+  - Raised and slightly reduced the floating microphone button so it no longer cuts into the AI tab icon.
+  - Guarded Simulator microphone taps so they do not touch the audio engine and cannot crash when the simulator has no usable microphone route; real-device speech recognition remains enabled behind the normal permission flow.
+- The center AI tab interaction now uses the raised microphone as the primary AI control:
+  - Tap opens the AI page.
+  - Press and hold for 1.5 seconds starts voice logging.
+  - Releasing after a voice hold stops recording, opens AI, and submits the transcript when available.
+- May 23, 2026 real-device microphone freeze hardening:
+  - Speech recording now requests speech and microphone permissions before starting the audio engine.
+  - Simulator microphone paths are guarded so they show a clear message instead of attempting an unsupported recording session.
+  - Recording teardown now removes audio taps, cancels stale recognition tasks, deactivates the audio session, and avoids double-stop races.
+  - A 20-second failsafe stops held recording sessions if the finger-up event is missed.
+  - Build succeeded for connected physical device `00008120-001079942E70201E` on May 23, 2026.
+- Additional microphone crash fix after `libdispatch.dylib _dispatch_assert_queue_fail` report:
+  - The delayed press-and-hold task is now pinned to the main actor before mutating SwiftUI state or starting speech.
+  - Normal voice release now finishes the speech recognition task instead of canceling it, reducing recognizer callback teardown races.
+  - The raised mic now provides haptic feedback and a visible red "Listening" state while recording.
+  - The real-device build succeeded again after these changes.
+- Follow-up after the dispatch assertion still reproduced on device:
+  - The raised mic no longer starts the custom `SFSpeechRecognizer` live recording path.
+  - The mic now opens AI, focuses the command field, shows a dictation prompt, and lets the user use iOS keyboard dictation before tapping send.
+  - This preserves voice entry while avoiding the native speech/audio queue assertion on the current device/OS build.
+  - Real-device build succeeded after this change on May 23, 2026.
+- Deepgram live voice work started on May 23, 2026:
+  - Added a backend/Insforge `deepgram-token` function that brokers short-lived Deepgram tokens without embedding the long-lived key in iOS.
+  - Added iOS `DeepgramVoiceService` for WebSocket live transcription using AVAudioEngine PCM streaming, interim transcript display, and submit-on-release.
+  - Added `RemoteFitcountableAPI.createVoiceSession()` for the iOS app to request a temporary voice session.
+  - Deployed the Insforge `deepgram-token` function.
+  - Physical iPhone build succeeds with the Deepgram client compiled in.
+  - Current blocker: Deepgram `/v1/auth/grant` returns `403 Insufficient permissions` for the provided key, so the deployed broker cannot mint temporary client tokens yet. The key needs permission to create temporary auth grants, or the architecture must move to a server-side WebSocket proxy/runtime that can keep the long-lived key fully server-side.
+- Deepgram blocker resolved:
+  - Replaced the Insforge `DEEPGRAM_API_KEY` secret with a new key provided on May 23, 2026.
+  - Verified the deployed `deepgram-token` function returns a token-shaped short-lived response without printing token contents.
+  - Confirmed the iPhone build still succeeds after the backend token broker works.
+- Deepgram mic freeze follow-up:
+  - Audio buffer sends were moved off the main actor onto a dedicated serial send queue so live mic streaming cannot flood SwiftUI with audio-buffer work.
+  - Added a hold-active guard so a Deepgram session cannot start after the user has already released the center mic while the token request is still in flight.
+  - Physical iPhone build succeeded after the freeze fix.
+- White-screen launch follow-up on May 23, 2026 at 2:42 AM ET:
+  - Removed unused Apple speech service construction from `AppState` startup.
+  - Made the Deepgram service lazy so the app does not initialize audio/microphone objects before the first SwiftUI screen renders.
+  - Moved splash dismissal scheduling to `RootView` and verified the simulator transitions from splash to onboarding.
+  - Simulator build succeeded and screenshot artifact `artifacts/simulator-checks/launch-after-white-fix-4s.png` shows the onboarding screen rendering.
+  - Generic physical iPhone build succeeded with signing.
+  - Current physical-device blocker: `devicectl` lists the iPhone as `unavailable`, and install fails because CoreDevice cannot locate the device. Reconnect/unlock/trust the phone, then reinstall the latest Debug-iphoneos app.
+- Local recording plus server-side transcription implemented on May 23, 2026:
+  - Added `VoiceRecorderService` to record short `.m4a` clips locally on a real iPhone.
+  - The center mic now records on hold, stops on release, uploads the audio, transcribes server-side, then submits the transcript to the existing AI command parser.
+  - Added and deployed Insforge function `transcribe-audio`, which sends prerecorded audio to Deepgram using the server-side `DEEPGRAM_API_KEY`.
+  - Verified the deployed function accepts audio payloads and returns a transcription-shaped response.
+  - Simulator and generic physical iPhone builds both succeeded after the recorder flow was added.
+- Voice upload failure fix on May 23, 2026:
+  - Reproduced the failure against the deployed function; Deepgram returned `400` for the AAC `.m4a` upload path.
+  - Changed local recording from AAC `.m4a` to mono 16 kHz PCM `.wav` and now upload with `audio/wav`.
+  - Added backend error detail passthrough so future transcription failures show the real cause in the app instead of a generic "voice upload failed" message.
+  - Rebuilt for iPhone, installed on connected iPhone 14 Pro, and launched the app successfully.
+- Follow-up voice upload key fix:
+  - App JSON encoding sends `audio_base64` / `mime_type`; the deployed `transcribe-audio` function now accepts both snake_case and camelCase payload keys.
+  - Replaced unsupported SF Symbol `check.circle.fill` with `checkmark.circle.fill`.
+  - Verified the deployed function accepts a snake_case WAV payload.
+  - Rebuilt, reinstalled, and relaunched on the connected iPhone 14 Pro.
+- AI review follow-up fixes on May 23, 2026:
+  - The "one more detail" panel is now conditional instead of appearing on every entry; it only appears for unconfirmed food estimates when confidence is low or the portion is genuinely vague.
+  - Confirmed entries no longer show the follow-up prompt.
+  - Follow-up updates now refine the current AI command card in place instead of creating a duplicate saved entry.
+  - Tapping Save/Confirm again on an already confirmed command is now a no-op instead of duplicating the record.
+  - The follow-up field has a keyboard Done action and toolbar Done button that dismiss the keyboard.
+  - The deployed `parse-command` backend now avoids `missing_fields` when the user gives usable context clues such as cups, bowls, plates, pieces, weights, restaurant/menu items, or size descriptors.
+  - Rebuilt, reinstalled, and relaunched the latest build on the connected iPhone 14 Pro after these fixes.
+- May 24, 2026 food/reps polish:
+  - Manual workout logging no longer starts with a hardcoded 8-rep set, and draft workout rows are editable before saving.
+  - Manual food logging no longer starts with a hardcoded chicken burrito bowl, and Add food item is disabled until the user enters a food.
+  - Manual food entries reset cleanly after adding/saving instead of repeatedly reusing a default meal.
+  - Added server-side `SPOONACULAR_API_KEY` as an Insforge secret and integrated Spoonacular nutrition lookup into `parse-command`.
+  - The parser now preserves the user's food wording, so "chicken burrito" stays "Chicken burrito" instead of becoming "Burrito bowl".
+  - Smoke tests verified `log a chicken burrito` returns a Spoonacular-backed estimate and `log bench press 12 reps at 135 pounds` returns one Bench Press set with 12 reps and 135 lb.
+  - Rebuilt, reinstalled, and relaunched the latest app on the connected iPhone 14 Pro.
+- May 24, 2026 follow-up UX correction:
+  - Replaced the confusing manual workout rep/RPE controls with a normal lifting entry flow: exercise, sets, reps per set, and weight.
+  - Adding an exercise now creates the requested number of editable set rows instead of one ambiguous row.
+  - AI food review cards now show a clean food title, serving quantity, calories, protein, carbs, and fat instead of exposing the raw "More detail" refinement text as the primary heading.
+  - Spoonacular nutrition results now scale with recognized serving details such as `1.5 cups`, `2 servings`, `large`, and similar portion clues.
+  - Smoke test verified `Jollof rice` returns 307 calories and `Jollof rice. More detail: 1.5 cups` returns 461 calories with `1.5 cups` shown as the quantity.
+  - Rebuilt, reinstalled, and relaunched the latest app on the connected iPhone 14 Pro.
+- May 24, 2026 workout display polish:
+  - Added a shared compact workout-set formatter that groups identical consecutive sets.
+  - Today and Log screens now display repeated sets as compact summaries like `Sets 1-5 · Leg press · 12 reps · 400 lb` instead of repeating the exercise text for every set.
+  - Sets split into separate rows only when exercise, reps, or weight changes.
+  - Physical iPhone and iPhone 16 Pro simulator builds both succeeded.
+  - Reinstalled and relaunched the latest app on the connected iPhone 14 Pro.
+- May 24, 2026 multi-food parser fix:
+  - Fixed the fast fallback parser so longer known foods match before generic tokens; `jollof rice` is no longer collapsed to `rice`.
+  - Replaced substring food matching with boundary-safe matching, so `goat meat` no longer matches the `oat` token.
+  - Food nutrition enrichment now runs for every detected item and totals the meal, instead of enriching only the first food item.
+  - Deployed the updated `parse-command` function to Insforge.
+  - Smoke test verified `Jollof rice and pounded yam` returns separate `Jollof Rice` and `Pounded Yam` items with a summed estimate of 777 calories.
+  - Smoke test verified `Efo riro and goat meat` returns separate `Efo Riro` and `Goat Meat` items with goat meat at 0g carbs.
+- May 24, 2026 food logging UX change:
+  - Removed the "One more detail would make this more accurate" follow-up panel from the AI review UI.
+  - Food logging now stays in the type/speak -> estimate -> confirm flow; uncertainty remains in estimate assumptions instead of prompting the user for another field.
+  - Confirmed meals now feed a local saved-foods list, and the Food log screen exposes recent saved foods as reusable tap-to-add items.
+  - Backend code was updated to leave `missing_fields` empty for meal estimates unless saved foods, Spoonacular, and AI reasoning cannot produce enough information.
+  - Parser sequence is now saved foods first, then Spoonacular, then AI reasoned estimate; hardcoded nutrition defaults are not used as an answer path.
+  - Production smoke test verified `Yam and corned beef stew` returns separate Spoonacular-backed `Yam` and `Corned Beef Stew` items totaling 751 calories, not a zero-calorie fallback.
+  - Production smoke test verified saved-food context is preferred before Spoonacular.
+  - `parse-command` and `confirm-action` were deployed after the Insforge/Deno subhosting rate limit cleared.
+  - Physical iPhone build succeeded after the saved-food context and needs-more-info guard changes; this newer build has not been installed yet.
+  - Direct Insforge DDL for the new `saved_foods` table returned `FORBIDDEN`, but `npx @insforge/cli db import migrations/create_saved_foods.sql` succeeded after relinking the project.
+  - Live Insforge metadata now shows `saved_foods` with RLS enabled; confirmed meals can persist reusable saved foods server-side.
+  - Installed and launched the latest local build on the connected iPhone 14 Pro after the saved-food context and needs-more-info guard changes.
+- May 24, 2026 AI review recovery controls:
+  - AI review screens now support interactive keyboard dismissal while scrolling.
+  - Added a bottom "Back to app" keyboard escape while AI voice/input state is active.
+  - Added keyboard toolbar actions for `Clear` and `Done`.
+  - Added `Redo` on unsaved AI drafts; it removes the current draft, dismisses keyboard state, and returns focus to the command input without saving.
+  - Physical iPhone build succeeded and was installed/launched on the connected iPhone 14 Pro.
+- May 24, 2026 food parser reliability and context controls:
+  - Added an `Add context` field on unsaved AI draft cards so the user can refine the current estimate without creating a duplicate saved entry.
+  - Added Spoonacular menu-item lookup before generic nutrition guessing, so branded restaurant/menu foods can resolve from menu evidence instead of becoming zero-calorie unresolved items.
+  - Added phrase-safe splitting for examples like `sweet and sour sauce`; the parser no longer splits that into separate `sweet` and `sour sauce` foods.
+  - Removed hardcoded food nutrition defaults from the answer path; current order is saved foods, Spoonacular menu/database evidence, then structured AI reasoned estimate, then a more-info block only if the item remains unresolved.
+  - Production smoke test verified `Medium Starbucks coffee and a medium McDonald's fries and one packet of sweet and sour sauce.` resolves as three items totaling 380 calories with no missing fields and no internal parser wording in assumptions.
+  - Production smoke test verified `Jollof rice and pounded yam` resolves as two items totaling 637 calories, using Spoonacular for jollof rice and structured AI nutrition for pounded yam.
+  - TypeScript check passed, the Insforge `parse-command` function was deployed, and the physical iPhone build succeeded, installed, and launched.
+- May 24, 2026 AI final food review:
+  - Changed the food parser so AI is not merely a fallback. Saved foods and Spoonacular now provide evidence first, then AI reviews/refines the final food list, portions, names, and macros before the estimate is returned.
+  - Added `+ai_reviewed` to nutrition sources after this final reconciliation pass.
+  - Updated the localhost food-log sequencing page at `http://127.0.0.1:7004/` to show evidence lookup followed by AI final review.
+  - Production smoke test verified the Starbucks/McDonald's example still resolves as three items totaling 380 calories with `spoonacular_menu+ai_reviewed`.
+  - Production smoke test verified `Jollof rice and pounded yam` still resolves as two items totaling 637 calories with AI reviewing both evidence sources.
+- May 24, 2026 food estimate card copy:
+  - Renamed the food review total row from `Estimated total` to `Your meal estimate`.
+  - The review card now repeats the total macros under the calorie total in a user-facing way.
+  - Replaced raw source text such as `spoonacular_menu+ai_reviewed` with a plain-English estimate note.
+  - Physical iPhone build succeeded and was installed/launched on the connected iPhone.
+- May 24, 2026 parser intent guard:
+  - Fixed intent classification so food/drink words that contain exercise substrings, such as `espresso` containing `press`, do not become workout logs.
+  - Food-like commands now win over workout detection unless the text clearly includes exercise context such as sets, reps, weights, cardio, or training.
+  - Workout parsing now handles phrases like `bench press 3 sets of 10 at 185 pounds` as three 10-rep sets at 185 lb.
+  - Production smoke test verified `espresso, lucky charms, chobani yogurt, orange juice, coffee and 2% milk` returns `log_meal` with no workout sets.
+  - Production smoke test verified `bench press 3 sets of 10 at 185 pounds` still returns `log_workout` with three sets.
+- May 25, 2026 current meal AI estimate fix:
+  - Fixed `Estimate current meal with AI` from the manual Log screen so it carries the selected meal segment into the AI request.
+  - Added `current_meal_type` to the iOS AI command context and backend parser.
+  - Backend now honors `current_meal_type` for meal estimates instead of defaulting to lunch when the user is estimating from a specific meal section.
+  - Production smoke tests verified current meal estimates return `breakfast`, `dinner`, and `snack` when those contexts are provided.
+  - Physical iPhone build succeeded and was installed/launched on the connected iPhone.
+- Build `0.1.0 (2)` was built and installed on the booted iPhone 16 Pro simulator on May 23, 2026 at 12:13 AM ET.
+  Latest local simulator screenshot artifact:
+  `artifacts/simulator-checks/build-2-launch.png`.
+- Automated UI smoke test target was added under `ios/FitcountableUITests`, but the Xcode UI test runner hung after the app build step in the local simulator environment. The app build itself succeeded and the corrected app was installed/launched directly with `simctl`.
+- App Store Connect app record exists:
+  - App Store Connect app ID: `6772402183`
+  - Bundle ID: `com.pentridgemedia.fitcountable`
+  - SKU: `fitcountable-ios-001`
+- Apple validation passed for `artifacts/export-app-store/Fitcountable.ipa` on May 22, 2026 at 10:50 PM.
+- TestFlight upload succeeded on May 22, 2026 at 10:51 PM.
+  - Delivery UUID: `746a6ac8-8dc8-47cd-a71a-8ff855abd081`
+- Uploaded build processing completed successfully:
+  - Build ID / delivery UUID: `746a6ac8-8dc8-47cd-a71a-8ff855abd081`
+  - Marketing version: `0.1.0`
+  - Build number: `1`
+  - Processing state: `VALID`
+  - Internal TestFlight state: `IN_BETA_TESTING`
+  - External TestFlight state: `WAITING_FOR_BETA_REVIEW`
+- Export compliance has been answered for the uploaded build with `usesNonExemptEncryption=false`.
+- `ITSAppUsesNonExemptEncryption=false` has been added to `ios/Fitcountable/Info.plist` for future uploads.
+- TestFlight metadata is configured:
+  - `en-US` beta app description, feedback email, marketing URL, and privacy URL.
+  - `en-US` build "What to Test" text.
+  - Beta review contact, demo credentials, and review notes.
+- TestFlight groups are configured:
+  - Internal Beta group: `ded9e200-7d12-4cb2-a077-58b523106197`
+  - External Beta group: `49177068-f62a-4c6d-967d-ee5b95bbe731`
+  - Uploaded build is attached to both groups.
+- Internal tester `bajulaiye@protonmail.com` was added to the Internal Beta group through App Store Connect UI.
+- App Store Connect API shows internal tester `bajulaiye@protonmail.com` state as `INSTALLED`.
+- The Internal Beta group build page shows `0.1.0 (1)` as `Ready to Test`.
+- External TestFlight beta review submission was created on May 22, 2026 at 11:00 PM ET and is waiting for Apple's beta review.
+- RevenueCat is configured with the production iOS public key and a live `default` offering. The offering packages map to the App Store product identifiers `com.fitcountable.premium.monthly`, `com.fitcountable.premium.yearly`, and `com.fitcountable.premium.lifetime`, all attached to the `premium` entitlement.
+- Build `0.1.0 (2)` is local only at this point and has not been uploaded to TestFlight. Per user instruction, do not upload it until the user has tested the simulator build or explicitly authorizes upload.
+
+## Remaining Release Work
+
+- App Store Connect IAPs/subscriptions are created and `READY_TO_SUBMIT`; because these are the app's first purchases, Apple requires them to be included with the first app version review submission after App Privacy is completed.
+- Add external beta testers after Apple beta review approves the build, or enable a public TestFlight link if desired.
+- Wait for Apple external beta review to complete.
+- Before App Store review, upload final App Store screenshots and submit the first IAP/subscription set with the app version.

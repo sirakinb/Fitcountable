@@ -1,0 +1,30 @@
+{
+  "entitlement": "premium",
+  "offering": "default",
+  "products": [
+    {
+      "productId": "com.fitcountable.premium.monthly",
+      "type": "auto_renewable_subscription",
+      "duration": "P1M",
+      "displayName": "Fitcountable Premium Monthly",
+      "price": "9.99"
+    },
+    {
+      "productId": "com.fitcountable.premium.yearly",
+      "type": "auto_renewable_subscription",
+      "duration": "P1Y",
+      "displayName": "Fitcountable Premium Yearly",
+      "price": "59.99",
+      "introductoryOffer": {
+        "type": "free_trial",
+        "duration": "P7D"
+      }
+    },
+    {
+      "productId": "com.fitcountable.premium.lifetime",
+      "type": "non_consumable",
+      "displayName": "Fitcountable Premium Lifetime",
+      "price": "149.99"
+    }
+  ]
+}
