@@ -116,11 +116,21 @@ def main() -> None:
         4,
     )
 
-    chips = [("Review before save", 74), ("Private by default", 292), ("Consistency", 506)]
-    for label, x in chips:
-        d.rounded_rectangle((x, 550, x + 190, 598), radius=24, fill=(9, 31, 25, 220), outline=(126, 236, 167, 120), width=1)
-        d.ellipse((x + 20, 567, x + 32, 579), fill=(126, 236, 167, 255))
-        d.text((x + 44, 562), label, font=font(18, True), fill=(235, 255, 244, 255))
+    chip_font = font(18, True)
+    chip_x = 74
+    for label in ["Review before save", "Private by default", "Consistency"]:
+        text_width = d.textbbox((0, 0), label, font=chip_font)[2]
+        chip_width = text_width + 74
+        d.rounded_rectangle(
+            (chip_x, 550, chip_x + chip_width, 598),
+            radius=24,
+            fill=(9, 31, 25, 220),
+            outline=(126, 236, 167, 120),
+            width=1,
+        )
+        d.ellipse((chip_x + 20, 567, chip_x + 32, 579), fill=(126, 236, 167, 255))
+        d.text((chip_x + 44, 562), label, font=chip_font, fill=(235, 255, 244, 255))
+        chip_x += chip_width + 24
 
     add_shadow(img, (760, 88, 1058, 604), 62, opacity=95, blur=42)
     phone = make_phone(PUBLIC / "app-today.png", (300, 520))
