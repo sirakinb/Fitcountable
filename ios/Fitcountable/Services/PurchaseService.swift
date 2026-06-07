@@ -13,6 +13,7 @@ final class PurchaseService: ObservableObject {
     @Published var activePlanLabel: String?
     @Published var lastError: String?
     @Published var isLoadingOfferings = false
+    @Published var hasLoadedStoreProducts = false
 
     #if DEBUG
     private let publicAPIKey: String? = "appl_GgMgjtcGivuXQISIAIccPuUwdSr"
@@ -88,12 +89,20 @@ final class PurchaseService: ObservableObject {
 
         #if canImport(RevenueCat)
         do {
-            let offerings = try await Purchases.shared.offerings()
+            let offerings = try await withTimeout(seconds: 8) {
+                try await Purchases.shared.offerings()
+            }
             guard let offering = offerings.offering(identifier: "default") ?? offerings.current else {
-                lastError = "RevenueCat offering 'default' is not available yet."
+                hasLoadedStoreProducts = false
+                lastError = "Plans are temporarily unavailable. Please try again shortly."
                 return
             }
             let loaded = offering.availablePackages
+            guard loaded.isEmpty == false else {
+                hasLoadedStoreProducts = false
+                lastError = "Plans are temporarily unavailable. Please try again shortly."
+                return
+            }
             revenueCatPackages = Dictionary(uniqueKeysWithValues: loaded.map { package in
                 let label = packageLabel(package)
                 return (label, package)
@@ -104,9 +113,11 @@ final class PurchaseService: ObservableObject {
             })
             activePlanLabel = activeProductIdentifier.flatMap(planLabel(for:))
             packages = loaded.map(packageLabel)
-            lastError = packages.isEmpty ? "RevenueCat returned no packages for the default offering." : nil
+            hasLoadedStoreProducts = true
+            lastError = nil
         } catch {
-            lastError = "Could not load RevenueCat offerings: \(error.localizedDescription)"
+            hasLoadedStoreProducts = false
+            lastError = "Plans are temporarily unavailable. Please try again shortly."
         }
         #endif
     }
@@ -136,7 +147,7 @@ final class PurchaseService: ObservableObject {
         }
         #if canImport(RevenueCat)
         guard let package = revenueCatPackages[label] else {
-            lastError = "Package is not available yet. Try restore or reload the paywall."
+            lastError = "Plans are still refreshing. Please try again shortly."
             return
         }
         do {
@@ -161,6 +172,28 @@ final class PurchaseService: ObservableObject {
     }
 
     #if canImport(RevenueCat)
+    private func withTimeout<T: Sendable>(
+        seconds: UInt64,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                throw TimeoutError()
+            }
+            guard let result = try await group.next() else {
+                throw TimeoutError()
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private struct TimeoutError: Error {}
+
     func isActivePackage(_ label: String) -> Bool {
         guard entitlementActive, let activeProductIdentifier else { return false }
         return packageProductIdentifiers[label] == activeProductIdentifier

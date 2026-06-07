@@ -252,11 +252,11 @@ private struct PremiumUpgradeView: View {
                     .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
 
                     VStack(alignment: .leading, spacing: 10) {
-                        if appState.purchaseService.isLoadingOfferings {
-                            ProgressView("Loading plans...")
-                        }
+                        Text("Choose a plan")
+                            .font(.headline)
                         ForEach(appState.purchaseService.packages, id: \.self) { package in
                             let isCurrentPlan = appState.purchaseService.isActivePackage(package)
+                            let canPurchase = appState.purchaseService.hasLoadedStoreProducts && !isCurrentPlan
                             Button {
                                 Task {
                                     await appState.purchaseService.purchase(package: package)
@@ -285,7 +285,13 @@ private struct PremiumUpgradeView: View {
                                 .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
-                            .disabled(isCurrentPlan)
+                            .disabled(!canPurchase)
+                            .opacity(canPurchase || isCurrentPlan ? 1 : 0.72)
+                        }
+                        if appState.purchaseService.isLoadingOfferings && !appState.purchaseService.hasLoadedStoreProducts {
+                            Text("Refreshing App Store pricing...")
+                                .font(.footnote)
+                                .foregroundStyle(Color.fitMuted)
                         }
                         if appState.isPremium || appState.purchaseService.entitlementActive {
                             Label("\(appState.purchaseService.activePlanLabel ?? "Premium") active", systemImage: "checkmark.seal.fill")
