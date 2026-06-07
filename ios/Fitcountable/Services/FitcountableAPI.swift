@@ -19,6 +19,7 @@ protocol FitcountableAPI {
     func profileView(targetUserId: String) async throws -> SocialProfileView
     func sendNudge(to friend: FriendProfile, message: String) async throws -> NudgeResult
     func setAccountabilitySettings(enabled: Bool, visibility: Visibility) async throws -> SocialActionResult
+    func deleteAccount() async throws -> SocialActionResult
 }
 
 enum APIError: LocalizedError {
@@ -96,6 +97,10 @@ struct LocalMockAPI: FitcountableAPI {
     }
 
     func setAccountabilitySettings(enabled: Bool, visibility: Visibility) async throws -> SocialActionResult {
+        throw APIError.unauthenticated
+    }
+
+    func deleteAccount() async throws -> SocialActionResult {
         throw APIError.unauthenticated
     }
 
@@ -440,6 +445,14 @@ final class RemoteFitcountableAPI: FitcountableAPI {
             body: AccountabilitySettingsRequest(enabled: enabled, visibilityScope: visibility.remoteValue, proofRequired: false)
         )
         return SocialActionResult(ok: response.settings.ok, status: response.settings.enabled ? "enabled" : "disabled")
+    }
+
+    func deleteAccount() async throws -> SocialActionResult {
+        guard let authToken else {
+            return try await fallback.deleteAccount()
+        }
+        let response: SocialResultResponse = try await postFunction("delete-account", token: authToken, body: EmptyRequest())
+        return response.result
     }
 
     private func postFunction<RequestBody: Encodable, ResponseBody: Decodable>(_ slug: String, token: String, body: RequestBody) async throws -> ResponseBody {

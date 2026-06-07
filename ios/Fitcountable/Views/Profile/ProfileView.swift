@@ -12,6 +12,8 @@ struct ProfileView: View {
     @State private var weeklyWorkouts = 4
     @State private var selectedProfilePhoto: PhotosPickerItem?
     @State private var showingPremium = false
+    @State private var showingDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +23,7 @@ struct ProfileView: View {
                     goals
                     goalEditor
                     paywall
+                    account
                     support
                 }
                 .padding()
@@ -31,6 +34,22 @@ struct ProfileView: View {
         .sheet(isPresented: $showingPremium) {
             PremiumUpgradeView()
                 .environmentObject(appState)
+        }
+        .confirmationDialog(
+            "Delete Fitcountable account?",
+            isPresented: $showingDeleteAccountConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete account", role: .destructive) {
+                Task {
+                    isDeletingAccount = true
+                    await appState.deleteAccount()
+                    isDeletingAccount = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes your Fitcountable profile, logs, friends, proof posts, and synced app data. App Store purchases remain managed by Apple.")
         }
         .onAppear {
             calories = appState.goal.calories
@@ -182,6 +201,61 @@ struct ProfileView: View {
         .onTapGesture {
             showingPremium = true
         }
+    }
+
+    private var account: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account")
+                .font(.headline)
+            if let session = appState.authSession {
+                Text(session.email.localizedCaseInsensitiveContains("@fitcountable.local") ? "Signed in with Apple." : "Signed in as \(session.email)")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.fitMuted)
+                HStack(spacing: 10) {
+                    Button {
+                        appState.signOut()
+                    } label: {
+                        Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.fitGreen)
+
+                    Button(role: .destructive) {
+                        showingDeleteAccountConfirmation = true
+                    } label: {
+                        Label(isDeletingAccount ? "Deleting..." : "Delete account", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isDeletingAccount)
+                }
+            } else {
+                Text("Sign in with Apple to use Fitcountable.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.fitMuted)
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    switch result {
+                    case .success(let authorization):
+                        if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
+                            appState.recordAppleSignIn(
+                                userIdentifier: credential.user,
+                                email: credential.email
+                            )
+                        }
+                    case .failure(let error):
+                        appState.authStatusMessage = "Apple sign-in failed: \(error.localizedDescription)"
+                    }
+                }
+                .signInWithAppleButtonStyle(.black)
+                .frame(height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding()
+        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var support: some View {

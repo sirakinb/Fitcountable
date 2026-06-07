@@ -171,6 +171,19 @@ final class PurchaseService: ObservableObject {
         lastError = "Preview purchase active for \(package)."
     }
 
+    func clearLocalEntitlementState() {
+        entitlementActive = false
+        activeProductIdentifier = nil
+        activePlanLabel = nil
+        lastError = nil
+        isLoadingOfferings = false
+        hasLoadedStoreProducts = false
+        #if canImport(RevenueCat)
+        revenueCatPackages = [:]
+        packageProductIdentifiers = [:]
+        #endif
+    }
+
     #if canImport(RevenueCat)
     private func withTimeout<T: Sendable>(
         seconds: UInt64,

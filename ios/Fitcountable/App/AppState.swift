@@ -51,7 +51,6 @@ final class AppState: ObservableObject {
             configureForScreenshot(screen: screenshotScreen)
         } else {
             loadSnapshot()
-            Task { await refreshPremiumStatus() }
         }
     }
 
@@ -161,7 +160,6 @@ final class AppState: ObservableObject {
             apiClient.authToken = session.accessToken
             authStatusMessage = "Signed in as \(session.email). Confirmed logs will sync."
             _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
-            await refreshPremiumStatus()
             await refreshSocial()
             saveSnapshot()
         } catch {
@@ -179,7 +177,6 @@ final class AppState: ObservableObject {
                 apiClient.authToken = session.accessToken
                 authStatusMessage = "Signed in with Apple as \(displayEmail)."
                 _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
-                await refreshPremiumStatus()
                 await refreshSocial()
                 saveSnapshot()
             } catch {
@@ -201,6 +198,40 @@ final class AppState: ObservableObject {
         accountabilityEnabled = accountability
         hasCompletedOnboarding = true
         saveSnapshot()
+    }
+
+    func signOut() {
+        authSession = nil
+        apiClient.authToken = nil
+        selectedTab = .today
+        hasCompletedOnboarding = false
+        isVoicePromptActive = false
+        isProcessingCommand = false
+        commandProcessingMessage = nil
+        friendSearchResults = []
+        incomingFriendRequests = []
+        outgoingFriendRequests = []
+        selectedSocialProfile = nil
+        socialStatusMessage = nil
+        authStatusMessage = "Signed out. Sign in with Apple to continue."
+        lastSyncMessage = nil
+        isPremium = false
+        purchaseService.clearLocalEntitlementState()
+        saveSnapshot()
+    }
+
+    func deleteAccount() async {
+        guard authSession != nil else {
+            signOut()
+            return
+        }
+        do {
+            _ = try await apiClient.deleteAccount()
+            clearLocalAccountState(message: "Account deleted.")
+        } catch {
+            authStatusMessage = "Could not delete account: \(error.localizedDescription)"
+            saveSnapshot()
+        }
     }
 
     func updateGoal(_ newGoal: GoalPlan) {
@@ -681,6 +712,37 @@ final class AppState: ObservableObject {
         if let data = try? JSONEncoder.fitcountable.encode(snapshot) {
             UserDefaults.standard.set(data, forKey: snapshotKey)
         }
+    }
+
+    private func clearLocalAccountState(message: String) {
+        hasCompletedOnboarding = false
+        selectedTab = .today
+        profile = .sample
+        profilePhotoData = nil
+        goal = .sample
+        workouts = []
+        meals = []
+        commands = []
+        friends = []
+        friendSearchResults = []
+        incomingFriendRequests = []
+        outgoingFriendRequests = []
+        proofPosts = []
+        proofMediaData = [:]
+        selectedSocialProfile = nil
+        socialStatusMessage = nil
+        accountabilityEnabled = false
+        authSession = nil
+        apiClient.authToken = nil
+        isPremium = false
+        purchaseService.clearLocalEntitlementState()
+        isProcessingCommand = false
+        commandProcessingMessage = nil
+        isVoicePromptActive = false
+        authStatusMessage = message + " Sign in with Apple to start again."
+        lastSyncMessage = nil
+        UserDefaults.standard.removeObject(forKey: snapshotKey)
+        saveSnapshot()
     }
 
     private func loadSnapshot() {
