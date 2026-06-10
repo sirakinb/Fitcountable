@@ -25,19 +25,23 @@ struct AICommandCenterView: View {
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .bottom) {
                 if appState.isVoicePromptActive || appState.commandProcessingMessage != nil {
-                    Button {
-                        dismissKeyboard()
-                    } label: {
-                        Label("Done", systemImage: "keyboard.chevron.compact.down")
-                            .font(.subheadline.weight(.bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+                    HStack {
+                        Spacer()
+                        Button {
+                            dismissKeyboard()
+                        } label: {
+                            Label("Done", systemImage: "keyboard.chevron.compact.down")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 11)
+                                .background(Color.fitGreen, in: Capsule())
+                                .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+                        }
+                        .buttonStyle(FitPressableButtonStyle())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.fitGreen)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 6)
                 }
             }
         }
@@ -50,7 +54,7 @@ struct AICommandCenterView: View {
                     .font(.title2)
                     .foregroundStyle(.white)
                     .frame(width: 46, height: 46)
-                    .background(LinearGradient.fitAccent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color.fitGreen, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tell Fitcountable what happened.")
                         .font(.system(.headline, design: .rounded, weight: .bold))

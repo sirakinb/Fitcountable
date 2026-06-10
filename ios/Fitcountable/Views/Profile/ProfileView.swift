@@ -442,7 +442,7 @@ private struct PremiumUpgradeView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient.fitAccent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(Color.fitGreen, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color.fitGreen.opacity(0.25), radius: 18, y: 8)
     }
 }

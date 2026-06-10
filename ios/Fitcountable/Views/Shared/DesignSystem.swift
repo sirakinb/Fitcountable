@@ -44,14 +44,6 @@ extension Color {
     })
 }
 
-extension LinearGradient {
-    static let fitAccent = LinearGradient(
-        colors: [Color.fitGreen, Color.fitBlue],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-}
-
 private struct FitCardSurface: ViewModifier {
     var cornerRadius: CGFloat
 
@@ -226,10 +218,7 @@ struct PrimaryButton: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(
-                    LinearGradient.fitAccent,
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
+                .background(Color.fitGreen, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .shadow(color: Color.fitGreen.opacity(isEnabled ? 0.28 : 0), radius: 12, y: 6)
                 .opacity(isEnabled ? 1 : 0.45)
         }
