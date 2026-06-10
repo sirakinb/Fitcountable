@@ -36,7 +36,7 @@ struct TodayView: View {
             .safeAreaInset(edge: .top) {
                 Color.clear.frame(height: 6)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .navigationBarTitleDisplayMode(.inline)
         }
     }

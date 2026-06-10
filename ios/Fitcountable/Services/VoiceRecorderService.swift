@@ -2,12 +2,16 @@ import AVFoundation
 import Foundation
 
 @MainActor
-final class VoiceRecorderService: NSObject, ObservableObject, AVAudioRecorderDelegate {
+final class VoiceRecorderService: ObservableObject {
     @Published var isRecording = false
     @Published var statusMessage: String?
 
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
+
+    var permissionState: AVAudioApplication.recordPermission {
+        AVAudioApplication.shared.recordPermission
+    }
 
     func start() async -> Bool {
         #if targetEnvironment(simulator)
@@ -18,11 +22,28 @@ final class VoiceRecorderService: NSObject, ObservableObject, AVAudioRecorderDel
         #endif
     }
 
+    /// Returns true only when permission is already granted. When undetermined,
+    /// it shows the system prompt and returns false so callers never try to
+    /// record while the TCC alert has interrupted the user's hold gesture.
+    func ensureMicrophonePermission() async -> MicrophonePermissionOutcome {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            return .granted
+        case .denied:
+            return .denied
+        case .undetermined:
+            let allowed = await AVAudioApplication.requestRecordPermission()
+            return allowed ? .justGranted : .denied
+        @unknown default:
+            let allowed = await AVAudioApplication.requestRecordPermission()
+            return allowed ? .justGranted : .denied
+        }
+    }
+
     private func startOnDevice() async -> Bool {
         if isRecording { return true }
 
-        let microphoneAllowed = await requestMicrophonePermission()
-        guard microphoneAllowed else {
+        guard AVAudioApplication.shared.recordPermission == .granted else {
             statusMessage = "Turn on Microphone access in Settings to use voice logging."
             return false
         }
@@ -31,7 +52,7 @@ final class VoiceRecorderService: NSObject, ObservableObject, AVAudioRecorderDel
 
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker])
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
             let url = FileManager.default.temporaryDirectory
@@ -46,11 +67,10 @@ final class VoiceRecorderService: NSObject, ObservableObject, AVAudioRecorderDel
                 AVLinearPCMIsBigEndianKey: false
             ]
             let recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder.delegate = self
             recorder.isMeteringEnabled = true
-            recorder.prepareToRecord()
-            guard recorder.record() else {
+            guard recorder.prepareToRecord(), recorder.record() else {
                 statusMessage = "Recording failed to start. Try again."
+                _ = stop()
                 return false
             }
 
@@ -88,12 +108,10 @@ final class VoiceRecorderService: NSObject, ObservableObject, AVAudioRecorderDel
         guard let url else { return }
         try? FileManager.default.removeItem(at: url)
     }
+}
 
-    private func requestMicrophonePermission() async -> Bool {
-        await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { allowed in
-                continuation.resume(returning: allowed)
-            }
-        }
-    }
+enum MicrophonePermissionOutcome {
+    case granted
+    case justGranted
+    case denied
 }

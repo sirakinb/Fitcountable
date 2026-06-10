@@ -392,6 +392,27 @@ final class AppState: ObservableObject {
         isVoiceHoldActive = true
         isVoicePromptActive = true
         commandProcessingMessage = "Listening..."
+
+        #if !targetEnvironment(simulator)
+        switch await voiceRecorderService.ensureMicrophonePermission() {
+        case .denied:
+            isVoiceHoldActive = false
+            isVoicePromptActive = false
+            commandProcessingMessage = "Turn on Microphone access in Settings to use voice logging."
+            track("voice_permission_denied")
+            return
+        case .justGranted:
+            // The system permission alert interrupted the hold gesture; ask for a fresh hold.
+            isVoiceHoldActive = false
+            isVoicePromptActive = false
+            commandProcessingMessage = "Microphone is ready. Hold the mic button and speak."
+            track("voice_permission_granted")
+            return
+        case .granted:
+            break
+        }
+        #endif
+
         let didStartRecording = await voiceRecorderService.start()
         guard isVoiceHoldActive else {
             voiceRecorderService.discard(voiceRecorderService.stop())

@@ -22,21 +22,21 @@ struct AICommandCenterView: View {
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("AI")
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .bottom) {
                 if appState.isVoicePromptActive || appState.commandProcessingMessage != nil {
                     Button {
                         dismissKeyboard()
                     } label: {
-                        Label("Back to app", systemImage: "keyboard.chevron.compact.down")
-                            .font(.subheadline.weight(.semibold))
+                        Label("Done", systemImage: "keyboard.chevron.compact.down")
+                            .font(.subheadline.weight(.bold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 12)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.fitGreen)
                     .padding(.horizontal)
-                    .padding(.bottom, 8)
+                    .padding(.vertical, 8)
                     .background(.ultraThinMaterial)
                 }
             }

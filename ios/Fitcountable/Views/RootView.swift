@@ -94,13 +94,17 @@ struct MainTabView: View {
                     .tag(AppTab.profile)
             }
 
-            CenterVoiceTabButton(
-                isRecording: appState.isVoicePromptActive,
-                isPrimed: isPressingVoiceButton && didStartVoiceHold == false
-            )
-            .accessibilityLabel("AI voice log")
-            .gesture(voiceGesture)
-            .padding(.bottom, 26)
+            VStack {
+                Spacer()
+                CenterVoiceTabButton(
+                    isRecording: appState.isVoicePromptActive,
+                    isPrimed: isPressingVoiceButton && didStartVoiceHold == false
+                )
+                .accessibilityLabel("AI voice log")
+                .gesture(voiceGesture)
+                .padding(.bottom, 26)
+            }
+            .ignoresSafeArea(.keyboard)
             .zIndex(2)
         }
     }
