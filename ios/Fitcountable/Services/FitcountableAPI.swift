@@ -7,7 +7,7 @@ protocol FitcountableAPI {
     func createVoiceSession() async throws -> VoiceSession
     func transcribeVoiceRecording(audioData: Data, mimeType: String) async throws -> VoiceTranscription
     func signIn(email: String, password: String) async throws -> AuthSession
-    func signInWithApple(userIdentifier: String, email: String?, displayName: String) async throws -> AuthSession
+    func signInWithApple(userIdentifier: String, email: String?, displayName: String, identityToken: String?, authorizationCode: String?) async throws -> AuthSession
     func confirmAction(rawText: String, proposal: ActionProposal) async throws -> ActionConfirmation
     func searchUsers(query: String) async throws -> [FriendSearchResult]
     func bootstrapProfile(displayName: String, goalType: GoalType, privacyMode: PrivacyMode, avatarData: Data?) async throws -> FriendSearchResult
@@ -15,6 +15,7 @@ protocol FitcountableAPI {
     func followUser(targetUserId: String) async throws -> SocialActionResult
     func respondFollow(userId: String, action: String) async throws -> SocialActionResult
     func createProofPost(workoutId: String?, mealId: String?, caption: String, visibility: Visibility, proofKind: String, detailLines: [String], photoData: Data?) async throws -> SocialProofPost
+    func proofMediaData(from mediaURL: String) async throws -> Data
     func proofFeed(targetUserId: String?) async throws -> [SocialProofPost]
     func profileView(targetUserId: String) async throws -> SocialProfileView
     func sendNudge(to friend: FriendProfile, message: String) async throws -> NudgeResult
@@ -52,7 +53,7 @@ struct LocalMockAPI: FitcountableAPI {
         throw APIError.unauthenticated
     }
 
-    func signInWithApple(userIdentifier: String, email: String?, displayName: String) async throws -> AuthSession {
+    func signInWithApple(userIdentifier: String, email: String?, displayName: String, identityToken: String?, authorizationCode: String?) async throws -> AuthSession {
         throw APIError.unauthenticated
     }
 
@@ -81,6 +82,10 @@ struct LocalMockAPI: FitcountableAPI {
     }
 
     func createProofPost(workoutId: String?, mealId: String?, caption: String, visibility: Visibility, proofKind: String, detailLines: [String], photoData: Data?) async throws -> SocialProofPost {
+        throw APIError.unauthenticated
+    }
+
+    func proofMediaData(from mediaURL: String) async throws -> Data {
         throw APIError.unauthenticated
     }
 
@@ -250,13 +255,14 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         var components = URLComponents(url: apiBaseURL.appending(path: "auth/sessions"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "client_type", value: "mobile")]
         var request = URLRequest(url: components.url!)
+        request.timeoutInterval = 15
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder.fitcountable.encode(SignInRequest(email: email, password: password))
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw APIError.unavailable
+            throw decodedError(from: data) ?? APIError.unavailable
         }
         let result = try JSONDecoder.fitcountable.decode(SignInResponse.self, from: data)
         guard let accessToken = result.accessToken else {
@@ -270,29 +276,35 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         )
     }
 
-    func signInWithApple(userIdentifier: String, email: String?, displayName: String) async throws -> AuthSession {
-        let normalized = appleAccount(userIdentifier: userIdentifier)
-        let registerResponse = try? await register(email: normalized.email, password: normalized.password, name: displayName)
-        if let registerResponse, let accessToken = registerResponse.accessToken {
-            return AuthSession(
-                userId: registerResponse.user.id,
-                email: email ?? registerResponse.user.email,
-                accessToken: accessToken,
-                refreshToken: registerResponse.refreshToken
-            )
+    func signInWithApple(userIdentifier: String, email: String?, displayName: String, identityToken: String?, authorizationCode: String?) async throws -> AuthSession {
+        let accounts = appleAccountCandidates(userIdentifier: userIdentifier)
+        for account in accounts {
+            if var session = try? await signIn(email: account.email, password: account.password) {
+                if let email {
+                    session.email = email
+                }
+                return session
+            }
         }
 
-        var session = try await signIn(email: normalized.email, password: normalized.password)
-        if let email {
-            session.email = email
+        let primary = accounts[0]
+        let registerResponse = try await register(email: primary.email, password: primary.password, name: displayName)
+        guard let accessToken = registerResponse.accessToken else {
+            throw APIError.unauthenticated
         }
-        return session
+        return AuthSession(
+            userId: registerResponse.user.id,
+            email: email ?? registerResponse.user.email,
+            accessToken: accessToken,
+            refreshToken: registerResponse.refreshToken
+        )
     }
 
     private func register(email: String, password: String, name: String) async throws -> SignInResponse {
         var components = URLComponents(url: apiBaseURL.appending(path: "auth/users"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "client_type", value: "mobile")]
         var request = URLRequest(url: components.url!)
+        request.timeoutInterval = 15
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder.fitcountable.encode(RegisterUserRequest(email: email, password: password, name: name))
@@ -304,10 +316,14 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         return try JSONDecoder.fitcountable.decode(SignInResponse.self, from: data)
     }
 
-    private func appleAccount(userIdentifier: String) -> (email: String, password: String) {
+    private func appleAccountCandidates(userIdentifier: String) -> [(email: String, password: String)] {
         let digest = SHA256.hash(data: Data(userIdentifier.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
-        return ("apple-\(hex.prefix(24))@fitcountable.local", "FitcountableApple-\(hex)")
+        let password = "FitcountableApple-\(hex)"
+        return [
+            ("apple-\(hex.prefix(24))@users.fitcountable.app", password),
+            ("apple-\(hex.prefix(24))@fitcountable.local", password)
+        ]
     }
 
     func confirmAction(rawText: String, proposal: ActionProposal) async throws -> ActionConfirmation {
@@ -385,6 +401,8 @@ final class RemoteFitcountableAPI: FitcountableAPI {
         guard let authToken else {
             return try await fallback.createProofPost(workoutId: workoutId, mealId: mealId, caption: caption, visibility: visibility, proofKind: proofKind, detailLines: detailLines, photoData: photoData)
         }
+        let media = try await uploadProofMedia(photoData, token: authToken)
+        let mediaURL = media.flatMap { resolvedURL(from: $0.url)?.absoluteString } ?? media?.url
         let response: CreateProofPostResponse = try await postFunction(
             "create-proof-post",
             token: authToken,
@@ -395,11 +413,47 @@ final class RemoteFitcountableAPI: FitcountableAPI {
                 visibility: visibility.remoteValue,
                 proofKind: proofKind,
                 detailLines: detailLines,
-                mediaType: photoData == nil ? nil : "image/jpeg",
-                mediaBase64: photoData?.base64EncodedString()
+                mediaURL: mediaURL,
+                mediaType: media?.mimeType
             )
         )
         return response.proofPost
+    }
+
+    func proofMediaData(from mediaURL: String) async throws -> Data {
+        guard let authToken else {
+            throw APIError.unauthenticated
+        }
+        if let data = URL(string: mediaURL)?.dataURLImageData {
+            return data
+        }
+
+        let objectKey = storageObjectKey(from: mediaURL)
+        let strategyURL = apiBaseURL.appending(path: "storage/buckets/proof-media/objects/\(objectKey)/download-strategy")
+        var strategyRequest = URLRequest(url: strategyURL)
+        strategyRequest.httpMethod = "POST"
+        strategyRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        strategyRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        strategyRequest.httpBody = try JSONEncoder.fitcountable.encode(StorageDownloadStrategyRequest(expiresIn: 3600))
+
+        let (strategyData, strategyResponse) = try await URLSession.shared.data(for: strategyRequest)
+        guard let strategyHTTP = strategyResponse as? HTTPURLResponse, (200..<300).contains(strategyHTTP.statusCode) else {
+            throw decodedError(from: strategyData) ?? APIError.unavailable
+        }
+        let strategy = try JSONDecoder.fitcountable.decode(StorageDownloadStrategy.self, from: strategyData)
+        guard let downloadURL = resolvedURL(from: strategy.url) else {
+            throw APIError.unavailable
+        }
+
+        var downloadRequest = URLRequest(url: downloadURL)
+        if downloadURL.host == apiBaseURL.host {
+            downloadRequest.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await URLSession.shared.data(for: downloadRequest)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.unavailable
+        }
+        return data
     }
 
     func proofFeed(targetUserId: String? = nil) async throws -> [SocialProofPost] {
@@ -467,6 +521,92 @@ final class RemoteFitcountableAPI: FitcountableAPI {
             throw decodedError(from: data) ?? APIError.unavailable
         }
         return try JSONDecoder.fitcountable.decode(ResponseBody.self, from: data)
+    }
+
+    private func uploadProofMedia(_ photoData: Data?, token: String) async throws -> StorageUploadResult? {
+        guard let photoData else { return nil }
+
+        let filename = "proof-\(UUID().uuidString).jpg"
+        var strategyRequest = URLRequest(url: apiBaseURL.appending(path: "storage/buckets/proof-media/upload-strategy"))
+        strategyRequest.httpMethod = "POST"
+        strategyRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        strategyRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        strategyRequest.httpBody = try JSONEncoder.fitcountable.encode(StorageUploadStrategyRequest(filename: filename, contentType: "image/jpeg", size: photoData.count))
+
+        let (strategyData, strategyResponse) = try await URLSession.shared.data(for: strategyRequest)
+        guard let strategyHTTP = strategyResponse as? HTTPURLResponse, (200..<300).contains(strategyHTTP.statusCode) else {
+            throw decodedError(from: strategyData) ?? APIError.unavailable
+        }
+        let strategy = try JSONDecoder.fitcountable.decode(StorageUploadStrategy.self, from: strategyData)
+        let uploadResponse = try await uploadMultipartImage(photoData, strategy: strategy, token: token, filename: filename)
+
+        if strategy.confirmRequired, let confirmURL = strategy.confirmUrl {
+            var confirmRequest = URLRequest(url: resolvedURL(from: confirmURL) ?? apiBaseURL.appending(path: "storage/buckets/proof-media/objects/\(strategy.key)/confirm-upload"))
+            confirmRequest.httpMethod = "POST"
+            confirmRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            confirmRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            confirmRequest.httpBody = try JSONEncoder.fitcountable.encode(StorageConfirmUploadRequest(size: photoData.count, contentType: "image/jpeg"))
+            let (confirmData, confirmResponse) = try await URLSession.shared.data(for: confirmRequest)
+            guard let confirmHTTP = confirmResponse as? HTTPURLResponse, (200..<300).contains(confirmHTTP.statusCode) else {
+                throw decodedError(from: confirmData) ?? APIError.unavailable
+            }
+            return try JSONDecoder.fitcountable.decode(StorageUploadResult.self, from: confirmData)
+        }
+
+        return uploadResponse ?? StorageUploadResult(bucket: "proof-media", key: strategy.key, size: photoData.count, mimeType: "image/jpeg", uploadedAt: nil, url: "/api/storage/buckets/proof-media/objects/\(strategy.key)")
+    }
+
+    private func uploadMultipartImage(_ data: Data, strategy: StorageUploadStrategy, token: String, filename: String) async throws -> StorageUploadResult? {
+        guard let uploadURL = resolvedURL(from: strategy.uploadUrl) else {
+            throw APIError.unavailable
+        }
+        let boundary = "FitcountableBoundary-\(UUID().uuidString)"
+        let multipart = multipartFormData(
+            boundary: boundary,
+            fields: strategy.fields ?? [:],
+            fileFieldName: "file",
+            filename: filename,
+            mimeType: "image/jpeg",
+            fileData: data
+        )
+
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = strategy.method == "presigned" ? "POST" : "PUT"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if strategy.method != "presigned" {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = multipart
+
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw decodedError(from: responseData) ?? APIError.unavailable
+        }
+        if responseData.isEmpty {
+            return nil
+        }
+        return try? JSONDecoder.fitcountable.decode(StorageUploadResult.self, from: responseData)
+    }
+
+    private func resolvedURL(from value: String) -> URL? {
+        if let url = URL(string: value), url.scheme != nil {
+            return url
+        }
+        guard let root = URL(string: "\(apiBaseURL.scheme ?? "https")://\(apiBaseURL.host ?? "")") else {
+            return nil
+        }
+        return URL(string: value, relativeTo: root)?.absoluteURL
+    }
+
+    private func storageObjectKey(from mediaURL: String) -> String {
+        if let url = URL(string: mediaURL), let range = url.path.range(of: "/api/storage/buckets/proof-media/objects/") {
+            return String(url.path[range.upperBound...])
+        }
+        let marker = "/api/storage/buckets/proof-media/objects/"
+        if let range = mediaURL.range(of: marker) {
+            return String(mediaURL[range.upperBound...])
+        }
+        return mediaURL
     }
 }
 
@@ -582,8 +722,8 @@ private struct CreateProofPostRequest: Encodable {
     var visibility: String
     var proofKind: String
     var detailLines: [String]
+    var mediaURL: String?
     var mediaType: String?
-    var mediaBase64: String?
 }
 
 private struct CreateProofPostResponse: Decodable {
@@ -604,6 +744,45 @@ private struct ProofFeedResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case proofPosts = "proof_posts"
     }
+}
+
+private struct StorageUploadStrategyRequest: Encodable {
+    var filename: String
+    var contentType: String
+    var size: Int
+}
+
+private struct StorageUploadStrategy: Decodable {
+    var method: String
+    var uploadUrl: String
+    var fields: [String: String]?
+    var key: String
+    var confirmRequired: Bool
+    var confirmUrl: String?
+}
+
+private struct StorageConfirmUploadRequest: Encodable {
+    var size: Int
+    var contentType: String
+}
+
+private struct StorageUploadResult: Decodable {
+    var bucket: String?
+    var key: String
+    var size: Int?
+    var mimeType: String?
+    var uploadedAt: String?
+    var url: String
+}
+
+private struct StorageDownloadStrategyRequest: Encodable {
+    var expiresIn: Int
+}
+
+private struct StorageDownloadStrategy: Decodable {
+    var method: String
+    var url: String
+    var expiresAt: String?
 }
 
 struct NudgeResult: Codable, Equatable {
@@ -751,6 +930,32 @@ private struct RemoteFoodItem: Decodable {
     }
 }
 
+private func multipartFormData(
+    boundary: String,
+    fields: [String: String],
+    fileFieldName: String,
+    filename: String,
+    mimeType: String,
+    fileData: Data
+) -> Data {
+    var data = Data()
+
+    for (name, value) in fields {
+        data.appendString("--\(boundary)\r\n")
+        data.appendString("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        data.appendString("\(value)\r\n")
+    }
+
+    data.appendString("--\(boundary)\r\n")
+    data.appendString("Content-Disposition: form-data; name=\"\(fileFieldName)\"; filename=\"\(filename)\"\r\n")
+    data.appendString("Content-Type: \(mimeType)\r\n\r\n")
+    data.append(fileData)
+    data.appendString("\r\n")
+    data.appendString("--\(boundary)--\r\n")
+
+    return data
+}
+
 extension JSONEncoder {
     static var fitcountable: JSONEncoder {
         let encoder = JSONEncoder()
@@ -771,5 +976,9 @@ extension JSONDecoder {
 extension Data {
     var jpegDataURLString: String {
         "data:image/jpeg;base64,\(base64EncodedString())"
+    }
+
+    mutating func appendString(_ string: String) {
+        append(Data(string.utf8))
     }
 }

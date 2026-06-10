@@ -1,10 +1,10 @@
 {
   "name": "Fitcountable",
   "subtitle": "AI fitness and accountability",
-  "privacyPolicyUrl": "https://web-app-build-26.vercel.app/privacy",
-  "termsOfUseUrl": "https://web-app-build-26.vercel.app/terms",
-  "supportUrl": "https://web-app-build-26.vercel.app/support",
-  "marketingUrl": "https://web-app-build-26.vercel.app",
+  "privacyPolicyUrl": "https://fitcountable.vercel.app/privacy",
+  "termsOfUseUrl": "https://fitcountable.vercel.app/terms",
+  "supportUrl": "https://fitcountable.vercel.app/support",
+  "marketingUrl": "https://fitcountable.vercel.app",
   "category": "HEALTH_AND_FITNESS",
   "reviewContact": {
     "firstName": "Akinyemi",
@@ -16,7 +16,7 @@
     "username": "sirakinb@gmail.com",
     "password": "123456"
   },
-  "description": "Fitcountable is an AI-native workout and nutrition tracker built for people who want consistency, accountability, and faster logging. Type or speak what happened, then review editable workout, meal, macro, and accountability drafts before saving.\n\nTrack strength sessions, meals, calories, protein, carbs, and fat. Use accountability mode to share consistency with selected friends and keep proof private by default. Fitcountable Premium unlocks higher AI command limits, advanced plans, deeper history, and enhanced accountability nudges.\n\nNutrition estimates are informational and should be reviewed before saving. Fitcountable is not medical advice.",
+  "description": "Fitcountable is an AI-native workout and nutrition tracker built for people who want consistency, accountability, and faster logging. Type or speak what happened, then review editable workout, meal, macro, and accountability drafts before saving.\n\nTrack strength sessions, meals, calories, protein, carbs, and fat. Use accountability mode to share consistency with selected friends and keep proof private by default. Fitcountable Premium unlocks higher AI command limits, advanced plans, deeper history, and enhanced accountability nudges.\n\nNutrition estimates are informational and should be reviewed before saving. Fitcountable is not medical advice.\n\nTerms of Use: https://fitcountable.vercel.app/terms\nApple Standard EULA: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/\nPrivacy Policy: https://fitcountable.vercel.app/privacy",
   "promotionalText": "Log workouts and meals by speaking naturally, then review structured AI drafts before saving.",
   "keywords": "fitness,workout,nutrition,calories,macros,gym,accountability,AI,meal tracker,workout tracker",
   "releaseNotes": "Initial release with onboarding, AI command logging, workout and meal tracking, accountability proof, and premium access.",

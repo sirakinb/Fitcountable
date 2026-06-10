@@ -42,6 +42,15 @@ struct LogView: View {
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Log")
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        hideKeyboard()
+                    }
+                }
+            }
         }
         .onAppear {
             selectedMode = appState.preferredLogMode
@@ -307,26 +316,17 @@ struct LogView: View {
                     .foregroundStyle(Color.fitMuted)
             } else {
                 ForEach(draftFoods) { item in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(item.name)
-                                .font(.headline)
-                            Text("\(item.quantityText) • \(item.calories) cal • \(Int(item.protein))g protein")
-                                .foregroundStyle(Color.fitMuted)
-                        }
-                        Spacer()
-                        Button {
-                            draftFoods.removeAll { $0.id == item.id }
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.red)
+                    EditableFoodRow(item: item) { updated in
+                        guard let index = draftFoods.firstIndex(where: { $0.id == updated.id }) else { return }
+                        draftFoods[index] = updated
+                    } onDelete: {
+                        draftFoods.removeAll { $0.id == item.id }
                     }
                 }
                 Divider()
                 Text("\(draftFoods.reduce(0) { $0 + $1.calories }) calories total")
                     .font(.headline)
+                    .contentTransition(.numericText())
             }
         }
     }
@@ -369,7 +369,7 @@ struct LogView: View {
                                         .foregroundStyle(Color.fitGreen)
                                 }
                                 .padding(10)
-                                .background(Color.fitSurface, in: RoundedRectangle(cornerRadius: 8))
+                                .background(Color.fitSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             }
                             .buttonStyle(.plain)
                         }
@@ -422,7 +422,92 @@ struct LogView: View {
             content()
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
+    }
+}
+
+private struct EditableFoodRow: View {
+    private let onUpdate: (FoodItem) -> Void
+    private let onDelete: () -> Void
+    @State private var baseItem: FoodItem
+    @State private var multiplier: Double = 1
+
+    init(item: FoodItem, onUpdate: @escaping (FoodItem) -> Void, onDelete: @escaping () -> Void) {
+        _baseItem = State(initialValue: item)
+        self.onUpdate = onUpdate
+        self.onDelete = onDelete
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(baseItem.name)
+                        .font(.headline)
+                    Text("\(scaledItem.quantityText) • \(scaledItem.calories) cal • \(Int(scaledItem.protein))g protein")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.fitMuted)
+                        .contentTransition(.numericText())
+                }
+                Spacer()
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+            }
+            HStack(spacing: 10) {
+                Text("Portion")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.fitMuted)
+                Button {
+                    adjustMultiplier(-0.5)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.bordered)
+                .disabled(multiplier <= 0.5)
+                Text(multiplierLabel)
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                    .frame(width: 46)
+                Button {
+                    adjustMultiplier(0.5)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.bordered)
+                .disabled(multiplier >= 4)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var multiplierLabel: String {
+        multiplier == multiplier.rounded() ? "\(Int(multiplier))x" : String(format: "%.1fx", multiplier)
+    }
+
+    private var scaledItem: FoodItem {
+        guard multiplier != 1 else { return baseItem }
+        return FoodItem(
+            id: baseItem.id,
+            name: baseItem.name,
+            quantityText: multiplier == 1 ? baseItem.quantityText : "\(baseItem.quantityText) ×\(multiplierLabel.dropLast())",
+            calories: Int((Double(baseItem.calories) * multiplier).rounded()),
+            protein: (baseItem.protein * multiplier * 10).rounded() / 10,
+            carbs: (baseItem.carbs * multiplier * 10).rounded() / 10,
+            fat: (baseItem.fat * multiplier * 10).rounded() / 10,
+            confidence: baseItem.confidence
+        )
+    }
+
+    private func adjustMultiplier(_ delta: Double) {
+        multiplier = min(4, max(0.5, multiplier + delta))
+        withAnimation(.snappy) {
+            onUpdate(scaledItem)
+        }
     }
 }
 

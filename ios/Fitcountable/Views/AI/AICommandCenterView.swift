@@ -14,9 +14,11 @@ struct AICommandCenterView: View {
                     }
                     ForEach(appState.commands) { command in
                         CommandReviewCard(command: command)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
                 .padding()
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.commands)
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("AI")
@@ -42,21 +44,54 @@ struct AICommandCenterView: View {
     }
 
     private var explainer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Tell Fitcountable what happened.")
-                .font(.headline)
-            Text("Say or type a meal, workout, goal change, or nudge. Fitcountable drafts it for review before saving.")
-                .font(.subheadline)
-                .foregroundStyle(Color.fitMuted)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(LinearGradient.fitAccent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tell Fitcountable what happened.")
+                        .font(.system(.headline, design: .rounded, weight: .bold))
+                    Text("Speak or type it. You review the draft before anything is saved.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.fitMuted)
+                }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                ExampleCommandRow(icon: "fork.knife", tint: .fitBlue, text: "\u{201C}Jollof rice with goat meat for dinner\u{201D}")
+                ExampleCommandRow(icon: "dumbbell.fill", tint: .fitGreen, text: "\u{201C}Bench press 3 sets of 10 at 185\u{201D}")
+                ExampleCommandRow(icon: "target", tint: .orange, text: "\u{201C}Set my protein target to 190\u{201D}")
+            }
         }
-        .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .padding(18)
+        .fitCardSurface()
     }
 
     private func dismissKeyboard() {
         appState.isVoicePromptActive = false
         appState.commandProcessingMessage = nil
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+private struct ExampleCommandRow: View {
+    var icon: String
+    var tint: Color
+    var text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.12), in: Circle())
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.fitMuted)
+        }
     }
 }
 
@@ -94,7 +129,7 @@ struct CommandReviewCard: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private func proposalView(_ proposal: ActionProposal, isConfirmed: Bool) -> some View {
@@ -154,14 +189,18 @@ struct CommandReviewCard: View {
                 .foregroundStyle(Color.fitInk)
             }
             if proposal.workoutSets.isEmpty == false {
-                ForEach(proposal.workoutSets) { set in
-                    HStack {
-                        Text(set.exerciseName)
-                        Spacer()
-                        Text("\(set.reps) reps @ \(Int(set.weight))")
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(WorkoutLog.groupedSetSummaries(proposal.workoutSets), id: \.self) { summary in
+                        HStack(spacing: 8) {
+                            Image(systemName: "dumbbell.fill")
+                                .font(.caption)
+                                .foregroundStyle(Color.fitGreen)
+                            Text(summary)
+                                .font(.subheadline.weight(.medium))
+                        }
                     }
-                    .font(.subheadline)
                 }
+                .padding(.vertical, 2)
             }
             if let estimateNote = estimateNote(for: proposal) {
                 Text(estimateNote)
@@ -173,7 +212,7 @@ struct CommandReviewCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.orange)
                     .padding(12)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if isConfirmed == false {
                 VStack(alignment: .leading, spacing: 8) {
@@ -200,7 +239,7 @@ struct CommandReviewCard: View {
                     }
                 }
                 .padding(12)
-                .background(Color.fitSurface, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.fitSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if isConfirmed {
                 Label("Saved", systemImage: "checkmark.seal.fill")

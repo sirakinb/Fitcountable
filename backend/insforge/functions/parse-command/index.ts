@@ -55,6 +55,9 @@ export default async function(req: Request): Promise<Response> {
               "workout_sets must use exercise_name, set_index, reps, weight, unit, rpe, notes.",
               "Return only JSON with action_type, confidence, requires_confirmation, summary, title, meal_type, calories, protein, carbs, fat, weekly_workouts, duration_minutes, target_friend_id, entities, proposed_records, user_editable_fields, missing_fields, assumptions, workout_sets, and food_items.",
               "Nutrition values are informational estimates and must be editable.",
+              "Workout set rules: expand counts like '3 sets of 10 at 185' or '5x5' into one workout_sets entry per set, each carrying the exact reps and weight the user stated. 'Squat 225 for 5, 245 for 3, 275 for 1' means three separate sets with those exact weight/rep pairs. Never invent, round, or default reps or weight; if the user gave a number, use it exactly. Number set_index sequentially starting at 1 across the whole workout.",
+              "If context.current_meal_type is provided and the user did not explicitly name a different meal, set meal_type to context.current_meal_type instead of defaulting to lunch.",
+              "Recognize culturally specific dishes (for example jollof rice, pounded yam, egusi, efo riro, suya, goat meat, oxtail stew) as foods, never workouts, and split multi-food descriptions into one food_items entry per distinct food.",
               "Preserve the user's exact food words. Do not turn a burrito into a burrito bowl, a sandwich into a salad, or a generic food into a restaurant item unless the user said that.",
               "Classify food and drink as log_meal or estimate_food even if a food word contains an exercise substring, such as espresso containing press. Only classify log_workout when the text clearly describes exercise, sets, reps, weights, cardio, or training.",
               "For meal and food estimates, use this sequence: user's saved_foods context first, then Spoonacular/database evidence, then AI reconciles the final food list, portions, and estimate from the available context. Do not use hardcoded nutrition defaults. If there is not enough information for a meaningful estimate after that reasoning pass, say more info is needed and include a specific missing_fields value."
@@ -361,39 +364,29 @@ function isLikelyWorkoutCommand(text: string): boolean {
 }
 
 function inferWorkoutSets(text: string) {
-  const lower = text.toLowerCase();
-  const sets = [];
-  const exerciseHints = [
-    { tokens: ["bench"], name: "Bench Press", defaultWeight: 185, defaultReps: 5 },
-    { tokens: ["squat"], name: "Back Squat", defaultWeight: 225, defaultReps: 5 },
-    { tokens: ["deadlift"], name: "Deadlift", defaultWeight: 275, defaultReps: 5 },
-    { tokens: ["row"], name: "Row", defaultWeight: 135, defaultReps: 8 },
-    { tokens: ["curl"], name: "Curl", defaultWeight: 30, defaultReps: 12 },
-    { tokens: ["pushdown", "tricep"], name: "Triceps Pushdown", defaultWeight: 70, defaultReps: 12 },
-    { tokens: ["press"], name: "Overhead Press", defaultWeight: 95, defaultReps: 8 },
-    { tokens: ["run", "cardio"], name: "Cardio", defaultWeight: 0, defaultReps: 1 }
-  ];
-  const firstWeight = inferFirstWeight(lower);
-  const firstReps = inferFirstReps(lower);
-  const setCount = inferSetCount(lower);
+  let body = text.trim();
+  const prefixMatch = body.match(/^([^:]{1,40}):\s*/);
+  if (prefixMatch && /\b(day|workout|session|training|push|pull|legs?|upper|lower|chest|back|arms?)\b/i.test(prefixMatch[1])) {
+    body = body.slice(prefixMatch[0].length);
+  }
+  const segments = body.split(/,|;|\bthen\b|\band then\b/i).map((segment) => segment.trim()).filter(Boolean);
+  const sets: Array<{ exercise_name: string; set_index: number; reps: number; weight: number; unit: string; rpe: null; notes: string }> = [];
+  let lastExercise = "";
 
-  for (const hint of exerciseHints) {
-    if (hint.name === "Overhead Press" && (lower.includes("bench press") || lower.includes("chest press"))) {
-      continue;
-    }
-    if (hint.tokens.some((token) => lower.includes(token))) {
-      const inferredWeight = hint.tokens.includes("bench") && firstWeight ? firstWeight : hint.defaultWeight;
-      for (let index = 0; index < setCount; index += 1) {
-        sets.push({
-          exercise_name: hint.name,
-          set_index: sets.length + 1,
-          reps: firstReps ?? hint.defaultReps,
-          weight: inferredWeight,
-          unit: "lb",
-          rpe: null,
-          notes: ""
-        });
-      }
+  for (const segment of segments) {
+    const parsed = parseWorkoutSegment(segment, lastExercise);
+    if (!parsed) continue;
+    lastExercise = parsed.exercise;
+    for (let index = 0; index < parsed.setCount; index += 1) {
+      sets.push({
+        exercise_name: parsed.exercise,
+        set_index: sets.length + 1,
+        reps: parsed.reps,
+        weight: parsed.weight,
+        unit: "lb",
+        rpe: null,
+        notes: ""
+      });
     }
   }
 
@@ -402,25 +395,80 @@ function inferWorkoutSets(text: string) {
   ];
 }
 
-function inferFirstWeight(lower: string): number | null {
-  return matchNumber(lower, /\b(?:at|@|with)\s*(\d{2,4})\s*(?:lb|lbs|pounds|kg)?\b/)
-    ?? matchNumber(lower, /\b(?:bench|squat|deadlift|row|curl|press)\s+(?:press\s+)?(\d{2,4})\b/)
-    ?? matchNumber(lower, /\b(\d{2,4})\s*(?:lb|lbs|pounds|kg)\b/);
+function parseWorkoutSegment(segment: string, lastExercise: string) {
+  let working = segment.toLowerCase();
+  let setCount = 1;
+  let reps = 0;
+  let weight = 0;
+
+  const setsOf = working.match(/\b(\d{1,2})\s*sets?\s*(?:of)?\s*(\d{1,3})\b/);
+  const nByM = setsOf ? null : working.match(/\b(\d{1,2})\s*[x×]\s*(\d{1,3})\b/);
+  if (setsOf) {
+    setCount = clampInt(Number(setsOf[1]), 1, 20);
+    reps = clampInt(Number(setsOf[2]), 1, 200);
+    working = working.replace(setsOf[0], " ");
+  } else if (nByM) {
+    setCount = clampInt(Number(nByM[1]), 1, 20);
+    reps = clampInt(Number(nByM[2]), 1, 200);
+    working = working.replace(nByM[0], " ");
+  }
+
+  const weightForReps = working.match(/\b(\d{2,4}(?:\.\d+)?)\s*(?:lb|lbs|pounds|kg)?\s*for\s*(\d{1,3})\b/);
+  if (weightForReps) {
+    weight = Number(weightForReps[1]);
+    if (reps === 0) reps = clampInt(Number(weightForReps[2]), 1, 200);
+    working = working.replace(weightForReps[0], " ");
+  }
+
+  if (weight === 0) {
+    const atWeight = working.match(/(?:\bat\b|@|\bwith\b)\s*(\d{1,4}(?:\.\d+)?)\s*(?:lb|lbs|pounds|kg)?/);
+    if (atWeight) {
+      weight = Number(atWeight[1]);
+      working = working.replace(atWeight[0], " ");
+    }
+  }
+
+  if (weight === 0) {
+    const dumbbellWeight = working.match(/\b(\d{2,3})s\b/);
+    if (dumbbellWeight) {
+      weight = Number(dumbbellWeight[1]);
+      working = working.replace(dumbbellWeight[0], " ");
+    }
+  }
+
+  if (weight === 0) {
+    const standalone = working.match(/\b(\d{2,4}(?:\.\d+)?)\s*(?:lb|lbs|pounds|kg)?\b/);
+    if (standalone && Number(standalone[1]) >= 20) {
+      weight = Number(standalone[1]);
+      working = working.replace(standalone[0], " ");
+    }
+  }
+
+  if (reps === 0) {
+    const repsOnly = working.match(/\b(\d{1,3})\s*reps?\b/);
+    if (repsOnly) {
+      reps = clampInt(Number(repsOnly[1]), 1, 200);
+      working = working.replace(repsOnly[0], " ");
+    }
+  }
+
+  const exercise = titleCase(
+    working
+      .replace(/\b(at|with|for|of|sets?|reps?|x|each|then|and|a|an|the|did|do|today|lb|lbs|pounds|kg)\b/gi, " ")
+      .replace(/[^a-z\s'-]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+
+  const finalExercise = exercise || lastExercise;
+  if (!finalExercise) return null;
+  if (reps === 0 && weight === 0 && exercise === "") return null;
+  return { exercise: finalExercise, setCount, reps: reps > 0 ? reps : 10, weight };
 }
 
-function inferFirstReps(lower: string): number | null {
-  return matchNumber(lower, /\b(\d{1,2})\s*reps?\b/)
-    ?? matchNumber(lower, /\b\d{1,2}\s*sets?\s+of\s+(\d{1,2})\b/)
-    ?? matchNumber(lower, /\bfor\s+\d{1,2}\s*x\s*(\d{1,2})\b/)
-    ?? matchNumber(lower, /\b\d{1,2}\s*x\s*(\d{1,2})\b/)
-    ?? matchNumber(lower, /\bfor\s+(\d{1,2})\b/);
-}
-
-function inferSetCount(lower: string): number {
-  const count = matchNumber(lower, /\b(\d{1,2})\s*sets?\b/)
-    ?? matchNumber(lower, /\b(\d{1,2})\s*x\s*\d{1,2}\b/);
-  if (!count) return 1;
-  return Math.min(12, Math.max(1, count));
+function clampInt(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function inferFoodItems(text: string) {
@@ -463,8 +511,13 @@ function knownFoodPhraseMatches(lowerText: string): string[] {
     "jollof rice",
     "pounded yam",
     "egusi soup",
+    "egusi",
     "efo riro",
     "goat meat",
+    "suya",
+    "oxtail stew",
+    "fried plantain",
+    "moi moi",
     "corned beef stew"
   ];
   const matches: Array<{ index: number; phrase: string }> = [];
@@ -488,7 +541,16 @@ function matchPhrase(text: string, phrase: string): RegExpExecArray | null {
   return new RegExp(`(^|[^a-z0-9])(${escapedPhrase})(?=$|[^a-z0-9])`, "i").exec(text);
 }
 
-async function enrichFoodProposal(proposal: ReturnType<typeof localFallback>, text: string, context: Record<string, unknown>) {
+type FoodProposal = {
+  action_type: string;
+  confidence: number;
+  summary: string;
+  assumptions: string[];
+  food_items: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+async function enrichFoodProposal(proposal: FoodProposal, text: string, context: Record<string, unknown>) {
   if (proposal.action_type !== "log_meal" && proposal.action_type !== "estimate_food") {
     return proposal;
   }
@@ -496,10 +558,10 @@ async function enrichFoodProposal(proposal: ReturnType<typeof localFallback>, te
   const aiKey = Deno.env.get("AI_GATEWAY_API_KEY") ?? Deno.env.get("API_KEY");
   const model = Deno.env.get("AI_GATEWAY_MODEL") ?? "moonshotai/kimi-k2.6";
 
-  const sourceItems = proposal.food_items.length > 0
+  const sourceItems: Array<Record<string, unknown>> = proposal.food_items.length > 0
     ? proposal.food_items
     : [{ name: foodNameForLookup(proposal, text), quantity_text: inferQuantityText(text.toLowerCase()), calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, confidence: 0.45 }];
-  let enrichedItems = await Promise.all(sourceItems.map((item) => enrichFoodItem(item, apiKey, aiKey, model, context)));
+  let enrichedItems: Array<Record<string, unknown>> = await Promise.all(sourceItems.map((item) => enrichFoodItem(item, apiKey, aiKey, model, context)));
   const aiReviewedItems = aiKey ? await refineMealItemsWithAi(text, enrichedItems, aiKey, model) : null;
   if (aiReviewedItems?.length) {
     enrichedItems = aiReviewedItems;
@@ -507,7 +569,7 @@ async function enrichFoodProposal(proposal: ReturnType<typeof localFallback>, te
   if (enrichedItems.every((item, index) => item === sourceItems[index])) return proposal;
   const nutritionSources = enrichedItems.map((item) => stringValue(item.nutrition_source, ""));
   const hasUnresolvedItems = enrichedItems.some((item) => numberValue(item.calories, 0) <= 0 && numberValue(item.protein_g, 0) <= 0 && numberValue(item.carbs_g, 0) <= 0 && numberValue(item.fat_g, 0) <= 0);
-  const totals = enrichedItems.reduce((sum, item) => ({
+  const totals = enrichedItems.reduce<{ calories: number; protein: number; carbs: number; fat: number }>((sum, item) => ({
     calories: sum.calories + Math.round(numberValue(item.calories, 0)),
     protein: sum.protein + numberValue(item.protein_g, 0),
     carbs: sum.carbs + numberValue(item.carbs_g, 0),
@@ -591,8 +653,8 @@ function buildFoodItem(item: Record<string, unknown>, foodName: string, quantity
   };
 }
 
-function foodNameForLookup(proposal: ReturnType<typeof localFallback>, text: string): string {
-  const proposedName = proposal.food_items[0]?.name;
+function foodNameForLookup(proposal: FoodProposal, text: string): string {
+  const proposedName = stringValue(proposal.food_items[0]?.name, "");
   const cleaned = stripQuantityWords(cleanupFoodName(text)
     .replace(/\.\s*more detail:.*$/i, "")
     .replace(/\bmore detail:.*$/i, ""));

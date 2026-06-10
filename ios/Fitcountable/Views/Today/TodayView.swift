@@ -36,6 +36,7 @@ struct TodayView: View {
             .safeAreaInset(edge: .top) {
                 Color.clear.frame(height: 6)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -43,6 +44,10 @@ struct TodayView: View {
     private var heroHeader: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
+                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased())
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(Color.fitGreen)
+                    .tracking(1.1)
                 Text("Today")
                     .font(.system(size: 40, weight: .black, design: .rounded))
                 Text("\(appState.goal.weeklyWorkouts)x workouts weekly target")
@@ -55,10 +60,12 @@ struct TodayView: View {
                     .font(.headline.bold())
                 Image(systemName: "bolt.fill")
                     .font(.subheadline)
+                    .foregroundStyle(Color.fitGreen)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.fitCard.opacity(0.7), in: Capsule())
+            .background(Color.fitCard.opacity(0.85), in: Capsule())
+            .overlay(Capsule().stroke(Color.fitBorder, lineWidth: 1))
         }
     }
 
@@ -84,7 +91,7 @@ struct TodayView: View {
                 .scaleEffect(x: 1, y: 1.8, anchor: .center)
         }
         .padding(22)
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var macrosCard: some View {
@@ -131,13 +138,13 @@ struct TodayView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .background(Color.black.opacity(0.07))
+                .background(Color.fitMuted.opacity(0.15))
                 .clipShape(Capsule())
             }
             .frame(height: 10)
         }
         .padding(22)
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var quickActions: some View {
@@ -198,7 +205,7 @@ struct TodayView: View {
             .buttonStyle(.bordered)
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var completedDayIndexes: Set<Int> {
@@ -237,27 +244,39 @@ private struct MacroSegment: Identifiable {
 
 private struct WeekConsistencyStrip: View {
     var completedIndexes: Set<Int>
-    private let days = ["S", "M", "T", "W", "T", "F", "S"]
+
+    private var calendar: Calendar { Calendar.current }
+
+    private var orderedWeekdayIndexes: [Int] {
+        (0..<7).map { (calendar.firstWeekday - 1 + $0) % 7 }
+    }
+
+    private var todayIndex: Int {
+        calendar.component(.weekday, from: .now) - 1
+    }
 
     var body: some View {
         HStack {
-            ForEach(days.indices, id: \.self) { index in
+            ForEach(orderedWeekdayIndexes, id: \.self) { weekdayIndex in
+                let isToday = weekdayIndex == todayIndex
+                let isComplete = completedIndexes.contains(weekdayIndex)
                 VStack(spacing: 8) {
-                    Text(days[index])
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.fitMuted)
+                    Text(calendar.veryShortWeekdaySymbols[weekdayIndex])
+                        .font(.caption.weight(isToday ? .bold : .medium))
+                        .foregroundStyle(isToday ? Color.fitGreen : Color.fitMuted)
                     ZStack {
                         Circle()
-                            .stroke(Color.black.opacity(0.22), lineWidth: 2)
-                        if completedIndexes.contains(index) {
+                            .stroke(isToday ? Color.fitGreen : Color.fitMuted.opacity(0.35), lineWidth: isToday ? 2.5 : 2)
+                        if isComplete {
                             Circle()
-                                .fill(Color.fitInk)
+                                .fill(Color.fitGreen)
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
                                 .foregroundStyle(.white)
                         }
                     }
                     .frame(width: 30, height: 30)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isComplete)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -284,7 +303,7 @@ private struct QuickActionButton: View {
                     .foregroundStyle(Color.fitInk)
             }
             .frame(maxWidth: .infinity, minHeight: 116)
-            .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+            .fitCardSurface()
         }
         .buttonStyle(.plain)
     }
@@ -316,7 +335,7 @@ private struct MealDiaryRow: View {
                 .tint(.fitBlue)
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var subtitle: String {
@@ -369,7 +388,7 @@ private struct WorkoutTodayRow: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 }
 
@@ -392,6 +411,6 @@ private struct EmptyTodayRow: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 }

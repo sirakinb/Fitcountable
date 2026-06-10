@@ -8,7 +8,9 @@ struct FitcountableApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .task {
+                    await appState.refreshPremiumStatus()
+                }
         }
     }
 }
-

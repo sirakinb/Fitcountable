@@ -72,6 +72,15 @@ struct OnboardingView: View {
             .background(Color.fitSurface)
         }
         .background(Color.fitSurface.ignoresSafeArea())
+        .onAppear {
+            appState.trackOnboardingStarted()
+        }
+        .onChange(of: appState.authSession?.userId) { _, userId in
+            guard step == 5, userId != nil else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                step = 6
+            }
+        }
     }
 
     @ViewBuilder
@@ -139,16 +148,25 @@ struct OnboardingView: View {
                     if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
                         appState.recordAppleSignIn(
                             userIdentifier: credential.user,
-                            email: credential.email
+                            email: credential.email,
+                            identityToken: credential.identityToken.flatMap { String(data: $0, encoding: .utf8) },
+                            authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
                         )
                     }
                 case .failure(let error):
-                    appState.authStatusMessage = "Apple sign-in failed: \(error.localizedDescription)"
+                    if (error as? ASAuthorizationError)?.code != .canceled {
+                        appState.authStatusMessage = "Apple sign-in didn't finish. Please try again."
+                    }
                 }
             }
                 .frame(height: 52)
                 .cornerRadius(8)
-            if appState.authSession != nil || appState.authStatusMessage.localizedCaseInsensitiveContains("failed") {
+                .disabled(appState.isSigningInWithApple)
+            HStack(spacing: 10) {
+                if appState.isSigningInWithApple {
+                    ProgressView()
+                        .tint(Color.fitGreen)
+                }
                 Text(appState.authStatusMessage)
                     .font(.footnote)
                     .foregroundStyle(appState.authSession == nil ? Color.fitMuted : Color.fitGreen)
@@ -178,10 +196,10 @@ struct OnboardingView: View {
                             .foregroundStyle(goal == option ? Color.fitGreen : Color.fitMuted)
                     }
                     .padding()
-                    .background(goal == option ? Color.fitGreen.opacity(0.16) : Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                    .background(goal == option ? Color.fitGreen.opacity(0.16) : Color.fitCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(goal == option ? Color.fitGreen : Color.clear, lineWidth: 2)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(goal == option ? Color.fitGreen : Color.fitBorder, lineWidth: goal == option ? 2 : 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -201,7 +219,7 @@ struct OnboardingView: View {
             Stepper("Gym sessions per week: \(Int(weeklyWorkouts))", value: $weeklyWorkouts, in: 1...7)
                 .font(.headline)
                 .padding()
-                .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                .fitCardSurface()
             MetricCard(title: "Starting plan", value: "\(Int(weeklyWorkouts)) workouts", detail: planDetail(for: goal), color: .fitBlue)
         }
         .padding(24)
@@ -231,7 +249,7 @@ struct OnboardingView: View {
                 }
                 .font(.headline)
                 .padding()
-                .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                .fitCardSurface()
                 Text("Nutrition estimates are informational and should be reviewed before saving.")
                     .font(.footnote)
                     .foregroundStyle(Color.fitMuted)
@@ -249,7 +267,7 @@ struct OnboardingView: View {
             Toggle("Let selected friends see consistency and proof posts", isOn: $accountability)
                 .font(.headline)
                 .padding()
-                .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                .fitCardSurface()
             Text("New accounts start private. Sharing is opt-in and can be changed later.")
                 .foregroundStyle(Color.fitMuted)
         }
@@ -277,7 +295,7 @@ struct OnboardingView: View {
                     }
                 }
                 .padding()
-                .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                .fitCardSurface()
                 HStack {
                     MetricCard(title: "Calories", value: "\(calories)", detail: "per day", color: .fitGreen)
                     MetricCard(title: "Training", value: "\(Int(weeklyWorkouts))x", detail: "per week", color: .fitBlue)
@@ -472,7 +490,7 @@ struct AccountabilityPhoto: View {
                     endPoint: .bottom
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: .black.opacity(0.08), radius: 14, y: 8)
     }
 }
@@ -491,7 +509,7 @@ struct WeeklyTargetPhoto: View {
                     endPoint: .bottom
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: .black.opacity(0.08), radius: 14, y: 8)
     }
 }

@@ -5,6 +5,7 @@ struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingSplash = ProcessInfo.processInfo.environment["FITCOUNTABLE_SCREENSHOT"] == nil
     @State private var splashDismissTask: Task<Void, Never>?
+    @State private var didTrackOpen = false
 
     var body: some View {
         Group {
@@ -20,6 +21,10 @@ struct RootView: View {
         .background(Color.fitSurface.ignoresSafeArea())
         .onAppear {
             scheduleSplashDismissal()
+            if didTrackOpen == false {
+                didTrackOpen = true
+                appState.trackAppOpened()
+            }
         }
         .onDisappear {
             splashDismissTask?.cancel()

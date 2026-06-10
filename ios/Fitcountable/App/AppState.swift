@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var accountabilityEnabled = false
     @Published var authSession: AuthSession?
     @Published var authStatusMessage = "Use Sign in with Apple to keep your Fitcountable account connected."
+    @Published var isSigningInWithApple = false
     @Published var lastSyncMessage: String?
     @Published var friendSearchResults: [FriendSearchResult] = []
     @Published var incomingFriendRequests: [FriendSearchResult] = []
@@ -25,6 +26,7 @@ final class AppState: ObservableObject {
     @Published var selectedSocialProfile: SocialProfileView?
     @Published var socialStatusMessage: String?
     @Published var isProcessingCommand = false
+    @Published var isSavingProof = false
     @Published var commandProcessingMessage: String?
     @Published var preferredLogMode: LogMode = .workout
     @Published var preferredMealType: MealType = .lunch
@@ -38,6 +40,7 @@ final class AppState: ObservableObject {
     )
     lazy var deepgramVoiceService = DeepgramVoiceService()
     lazy var voiceRecorderService = VoiceRecorderService()
+    let analytics = AnalyticsService(endpoint: URL(string: "https://hxvc7grj.us-east.insforge.app/functions/track-event")!)
     let purchaseService = PurchaseService()
     private let snapshotKey = "fitcountable.local.snapshot.v1"
     private var voiceTimeoutTask: Task<Void, Never>?
@@ -90,8 +93,53 @@ final class AppState: ObservableObject {
             }
     }
 
+    func trackAppOpened() {
+        track("app_opened", properties: [
+            "has_completed_onboarding": .bool(hasCompletedOnboarding),
+            "is_authenticated": .bool(authSession != nil),
+            "selected_tab": .string(selectedTab.rawValue),
+            "is_premium": .bool(isPremium || purchaseService.entitlementActive)
+        ])
+    }
+
+    func trackPremiumViewed() {
+        track("premium_viewed", properties: [
+            "is_premium": .bool(isPremium || purchaseService.entitlementActive),
+            "has_loaded_store_products": .bool(purchaseService.hasLoadedStoreProducts)
+        ])
+    }
+
+    func trackPremiumPurchaseStarted(package: String) {
+        track("premium_purchase_started", properties: [
+            "package": .string(package)
+        ])
+    }
+
+    func trackPremiumPurchaseFinished(package: String) {
+        track("premium_purchase_finished", properties: [
+            "package": .string(package),
+            "is_premium": .bool(isPremium || purchaseService.entitlementActive),
+            "active_plan": .string(purchaseService.activePlanLabel ?? "unknown")
+        ])
+    }
+
+    func trackPremiumRestoreStarted() {
+        track("premium_restore_started")
+    }
+
+    func trackPremiumRestoreFinished() {
+        track("premium_restore_finished", properties: [
+            "is_premium": .bool(isPremium || purchaseService.entitlementActive),
+            "active_plan": .string(purchaseService.activePlanLabel ?? "unknown")
+        ])
+    }
+
     func submitCommand(_ text: String, currentMealType: MealType? = nil) async {
         guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { return }
+        track("command_submitted", properties: [
+            "input_length": .int(text.count),
+            "current_meal_type": .string(currentMealType?.rawValue ?? "none")
+        ])
         let draft = AICommandRecord(rawText: text, status: .parsing)
         commands.insert(draft, at: 0)
         isProcessingCommand = true
@@ -116,10 +164,19 @@ final class AppState: ObservableObject {
             if let index = commands.firstIndex(where: { $0.id == draft.id }) {
                 commands[index] = AICommandRecord(id: draft.id, rawText: text, status: .ready, proposal: proposal)
             }
+            track("command_parsed", properties: [
+                "action_type": .string(proposal.actionType.rawValue),
+                "confidence": .double(proposal.confidence),
+                "food_item_count": .int(proposal.foodItems.count),
+                "workout_set_count": .int(proposal.workoutSets.count)
+            ])
         } catch {
             if let index = commands.firstIndex(where: { $0.id == draft.id }) {
-                commands[index] = AICommandRecord(id: draft.id, rawText: text, status: .failed(error.localizedDescription))
+                commands[index] = AICommandRecord(id: draft.id, rawText: text, status: .failed(AppState.friendlyMessage(for: error, fallback: "Couldn't turn that into a log. Check your connection and try again.")))
             }
+            track("command_parse_failed", properties: [
+                "message": .string(error.localizedDescription)
+            ])
         }
     }
 
@@ -127,6 +184,10 @@ final class AppState: ObservableObject {
         let cleanDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleanDetail.isEmpty == false else { return }
         guard commands.contains(where: { $0.id == command.id }) else { return }
+        track("command_refine_started", properties: [
+            "detail_length": .int(cleanDetail.count),
+            "had_proposal": .bool(command.proposal != nil)
+        ])
 
         let refinedText = "\(command.rawText). More detail: \(cleanDetail)"
         if let index = commands.firstIndex(where: { $0.id == command.id }) {
@@ -142,18 +203,42 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let proposal = try await apiClient.parseCommand(text: refinedText, context: .init(profile: profile, goal: goal, savedFoods: Array(savedFoodItems.prefix(30))))
+            let proposal = try await apiClient.parseCommand(
+                text: refinedText,
+                context: .init(
+                    profile: profile,
+                    goal: goal,
+                    savedFoods: Array(savedFoodItems.prefix(30)),
+                    currentMealType: command.proposal?.mealType
+                )
+            )
             if let index = commands.firstIndex(where: { $0.id == command.id }) {
                 commands[index] = AICommandRecord(id: command.id, rawText: refinedText, status: .ready, proposal: proposal)
             }
+            track("command_refine_completed", properties: [
+                "action_type": .string(proposal.actionType.rawValue),
+                "confidence": .double(proposal.confidence)
+            ])
         } catch {
             if let index = commands.firstIndex(where: { $0.id == command.id }) {
-                commands[index] = AICommandRecord(id: command.id, rawText: refinedText, status: .failed(error.localizedDescription), proposal: command.proposal)
+                commands[index] = AICommandRecord(id: command.id, rawText: refinedText, status: .failed(AppState.friendlyMessage(for: error, fallback: "Couldn't update that draft. Check your connection and try again.")), proposal: command.proposal)
             }
+            track("command_refine_failed", properties: [
+                "message": .string(error.localizedDescription)
+            ])
         }
     }
 
+    private var didTrackOnboardingStart = false
+
+    func trackOnboardingStarted() {
+        guard didTrackOnboardingStart == false else { return }
+        didTrackOnboardingStart = true
+        track("onboarding_started")
+    }
+
     func signIn(email: String, password: String) async {
+        track("sign_in_started", properties: ["provider": .string("email")])
         do {
             let session = try await apiClient.signIn(email: email, password: password)
             authSession = session
@@ -162,28 +247,53 @@ final class AppState: ObservableObject {
             _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
             await refreshSocial()
             saveSnapshot()
+            track("sign_in_completed", properties: ["provider": .string("email")])
         } catch {
-            authStatusMessage = "Sign-in failed: \(error.localizedDescription)"
+            authStatusMessage = AppState.friendlyMessage(for: error, fallback: "Sign-in didn't finish. Check your connection and try again.")
+            track("sign_in_failed", properties: ["provider": .string("email")])
         }
     }
 
-    func recordAppleSignIn(userIdentifier: String, email: String?) {
+    func recordAppleSignIn(userIdentifier: String, email: String?, identityToken: String? = nil, authorizationCode: String? = nil) {
+        guard isSigningInWithApple == false else { return }
+        track("sign_in_started", properties: ["provider": .string("apple")])
         let displayEmail = email ?? "Apple private relay"
+        isSigningInWithApple = true
         authStatusMessage = "Finishing Apple sign-in..."
         Task {
+            defer {
+                isSigningInWithApple = false
+            }
             do {
-                let session = try await apiClient.signInWithApple(userIdentifier: userIdentifier, email: email, displayName: profile.displayName)
+                let session = try await apiClient.signInWithApple(
+                    userIdentifier: userIdentifier,
+                    email: email,
+                    displayName: profile.displayName,
+                    identityToken: identityToken,
+                    authorizationCode: authorizationCode
+                )
                 authSession = session
                 apiClient.authToken = session.accessToken
                 authStatusMessage = "Signed in with Apple as \(displayEmail)."
+                await purchaseService.identify(appUserId: session.userId)
+                isPremium = purchaseService.entitlementActive
                 _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
                 await refreshSocial()
                 saveSnapshot()
+                track("sign_in_completed", properties: [
+                    "provider": .string("apple"),
+                    "revenuecat_identified": .bool(true),
+                    "is_premium": .bool(isPremium)
+                ])
             } catch {
                 apiClient.authToken = nil
                 authStatusMessage = "Apple sign-in could not finish. Check your connection and try again."
-                lastSyncMessage = "You can keep testing locally, but sync, social, and premium need Sign in with Apple."
+                lastSyncMessage = nil
                 saveSnapshot()
+                track("sign_in_failed", properties: [
+                    "provider": .string("apple"),
+                    "message": .string(error.localizedDescription)
+                ])
             }
         }
     }
@@ -198,9 +308,15 @@ final class AppState: ObservableObject {
         accountabilityEnabled = accountability
         hasCompletedOnboarding = true
         saveSnapshot()
+        track("onboarding_completed", properties: [
+            "goal_type": .string(goalType.rawValue),
+            "weekly_workouts": .int(weeklyWorkouts),
+            "accountability_enabled": .bool(accountability)
+        ])
     }
 
     func signOut() {
+        track("signed_out")
         authSession = nil
         apiClient.authToken = nil
         selectedTab = .today
@@ -216,6 +332,9 @@ final class AppState: ObservableObject {
         authStatusMessage = "Signed out. Sign in with Apple to continue."
         lastSyncMessage = nil
         isPremium = false
+        Task {
+            await purchaseService.logOut()
+        }
         purchaseService.clearLocalEntitlementState()
         saveSnapshot()
     }
@@ -227,35 +346,48 @@ final class AppState: ObservableObject {
         }
         do {
             _ = try await apiClient.deleteAccount()
+            track("account_deleted")
             clearLocalAccountState(message: "Account deleted.")
         } catch {
-            authStatusMessage = "Could not delete account: \(error.localizedDescription)"
+            authStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't delete your account right now. Try again in a moment.")
+            track("account_delete_failed")
             saveSnapshot()
         }
     }
 
     func updateGoal(_ newGoal: GoalPlan) {
         goal = newGoal
+        track("goal_updated", properties: [
+            "calories": .int(newGoal.calories),
+            "protein": .int(newGoal.protein),
+            "carbs": .int(newGoal.carbs),
+            "fat": .int(newGoal.fat),
+            "weekly_workouts": .int(newGoal.weeklyWorkouts)
+        ])
         saveSnapshot()
     }
 
     func openFoodLog(mealType: MealType) {
+        track("log_opened", properties: ["mode": .string("food"), "meal_type": .string(mealType.rawValue)])
         preferredLogMode = .food
         preferredMealType = mealType
         selectedTab = .log
     }
 
     func openWorkoutLog() {
+        track("log_opened", properties: ["mode": .string("workout")])
         preferredLogMode = .workout
         selectedTab = .log
     }
 
     func openAI() {
+        track("ai_opened")
         selectedTab = .ai
         isVoicePromptActive = false
     }
 
     func startVoiceHold() async {
+        track("voice_hold_started")
         selectedTab = .ai
         isVoiceHoldActive = true
         isVoicePromptActive = true
@@ -268,10 +400,14 @@ final class AppState: ObservableObject {
         if didStartRecording == false {
             commandProcessingMessage = voiceRecorderService.statusMessage ?? "Voice is unavailable. Type your log instead."
             aiInputFocusRequest = UUID()
+            track("voice_recording_failed", properties: [
+                "message": .string(commandProcessingMessage ?? "unknown")
+            ])
         }
     }
 
     func finishVoiceHold() {
+        track("voice_hold_finished")
         selectedTab = .ai
         voiceTimeoutTask?.cancel()
         voiceTimeoutTask = nil
@@ -283,6 +419,7 @@ final class AppState: ObservableObject {
         guard let recordingURL else {
             commandProcessingMessage = "Type your log or use keyboard dictation, then tap send."
             aiInputFocusRequest = UUID()
+            track("voice_recording_empty")
             return
         }
 
@@ -295,20 +432,28 @@ final class AppState: ObservableObject {
                 let transcript = transcription.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard transcript.isEmpty == false else {
                     commandProcessingMessage = "I did not catch that. Try again or type your log."
+                    track("voice_transcription_empty")
                     return
                 }
                 commandProcessingMessage = "Building your editable log..."
+                track("voice_transcription_completed", properties: [
+                    "transcript_length": .int(transcript.count)
+                ])
                 await submitCommand(transcript)
             } catch {
                 voiceRecorderService.discard(recordingURL)
-                commandProcessingMessage = error.localizedDescription
+                commandProcessingMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't process that recording. Type your log instead.")
                 aiInputFocusRequest = UUID()
+                track("voice_transcription_failed", properties: [
+                    "message": .string(error.localizedDescription)
+                ])
             }
         }
     }
 
     func updatePrivacyMode(_ mode: PrivacyMode) {
         profile.privacyMode = mode
+        track("privacy_mode_updated", properties: ["mode": .string(mode.rawValue)])
         saveSnapshot()
         Task {
             _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: mode, avatarData: profilePhotoData)
@@ -318,6 +463,7 @@ final class AppState: ObservableObject {
 
     func updateProfilePhoto(_ data: Data?) {
         profilePhotoData = data
+        track("profile_photo_updated", properties: ["has_photo": .bool(data != nil)])
         saveSnapshot()
         Task {
             _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: data)
@@ -325,6 +471,12 @@ final class AppState: ObservableObject {
     }
 
     func confirm(_ proposal: ActionProposal, rawText: String? = nil) {
+        track("proposal_confirmed", properties: [
+            "action_type": .string(proposal.actionType.rawValue),
+            "confidence": .double(proposal.confidence),
+            "food_item_count": .int(proposal.foodItems.count),
+            "workout_set_count": .int(proposal.workoutSets.count)
+        ])
         switch proposal.actionType {
         case .logWorkout:
             workouts.insert(.fromProposal(proposal), at: 0)
@@ -359,6 +511,9 @@ final class AppState: ObservableObject {
     }
 
     func redo(_ command: AICommandRecord) {
+        track("command_redone", properties: [
+            "had_proposal": .bool(command.proposal != nil)
+        ])
         commands.removeAll { $0.id == command.id }
         isProcessingCommand = commands.contains { record in
             if case .parsing = record.status { true } else { false }
@@ -373,6 +528,11 @@ final class AppState: ObservableObject {
 
     func saveManualWorkout(_ workout: WorkoutLog) {
         workouts.insert(workout, at: 0)
+        track("manual_workout_saved", properties: [
+            "duration_minutes": .int(workout.durationMinutes),
+            "set_count": .int(workout.sets.count),
+            "visibility": .string(workout.visibility.rawValue)
+        ])
         let proposal = ActionProposal(
             actionType: .logWorkout,
             confidence: 1,
@@ -398,6 +558,11 @@ final class AppState: ObservableObject {
 
     func saveManualMeal(_ meal: MealLog) {
         meals.insert(meal, at: 0)
+        track("manual_meal_saved", properties: [
+            "meal_type": .string(meal.mealType.rawValue),
+            "item_count": .int(meal.items.count),
+            "calories": .int(meal.totalCalories)
+        ])
         let proposal = ActionProposal(
             actionType: .logMeal,
             confidence: 1,
@@ -427,12 +592,19 @@ final class AppState: ObservableObject {
             friendSearchResults = []
             return
         }
+        track("friend_search_submitted", properties: [
+            "query_length": .int(trimmed.count)
+        ])
 
         do {
             friendSearchResults = try await apiClient.searchUsers(query: trimmed)
             socialStatusMessage = friendSearchResults.isEmpty ? "No matching users yet." : nil
+            track("friend_search_completed", properties: [
+                "result_count": .int(friendSearchResults.count)
+            ])
         } catch {
-            socialStatusMessage = "Friend search unavailable: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Friend search isn't available right now. Try again in a moment.")
+            track("friend_search_failed")
         }
     }
 
@@ -467,10 +639,11 @@ final class AppState: ObservableObject {
             incomingFriendRequests = lists.incoming
             outgoingFriendRequests = lists.outgoing
             proofPosts = try await apiClient.proofFeed(targetUserId: nil)
+            await hydrateProofMedia(for: proofPosts)
             socialStatusMessage = proofPosts.isEmpty && friends.isEmpty ? "Find friends or post your first proof." : nil
             saveSnapshot()
         } catch {
-            socialStatusMessage = "Social sync failed: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't refresh your feed. Check your connection and try again.")
         }
     }
 
@@ -478,10 +651,14 @@ final class AppState: ObservableObject {
         do {
             let result = try await apiClient.followUser(targetUserId: targetUserId)
             socialStatusMessage = result.status == "accepted" ? "Friend request accepted." : "Friend request sent."
+            track("follow_request_sent", properties: [
+                "status": .string(result.status)
+            ])
             friendSearchResults = []
             await refreshSocial()
         } catch {
-            socialStatusMessage = "Friend request failed: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't send that friend request. Try again in a moment.")
+            track("follow_request_failed")
         }
     }
 
@@ -489,14 +666,33 @@ final class AppState: ObservableObject {
         do {
             _ = try await apiClient.respondFollow(userId: userId, action: action)
             socialStatusMessage = action == "accept" ? "Friend approved." : "Request removed."
+            track("follow_request_responded", properties: [
+                "action": .string(action)
+            ])
             await refreshSocial()
         } catch {
-            socialStatusMessage = "Could not update request: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't update that request. Try again in a moment.")
+            track("follow_request_response_failed", properties: [
+                "action": .string(action)
+            ])
         }
     }
 
-    func createProofPost(caption: String, visibility: Visibility, workout: WorkoutLog?, meal: MealLog?, proofKind: String, photoData: Data?) async {
+    @discardableResult
+    func createProofPost(caption: String, visibility: Visibility, workout: WorkoutLog?, meal: MealLog?, proofKind: String, photoData: Data?) async -> Bool {
+        guard isSavingProof == false else { return false }
+        isSavingProof = true
+        socialStatusMessage = "Saving proof..."
+        defer { isSavingProof = false }
+
         let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        track("proof_post_started", properties: [
+            "proof_kind": .string(proofKind),
+            "visibility": .string(visibility.rawValue),
+            "has_photo": .bool(photoData != nil),
+            "has_workout": .bool(workout != nil),
+            "has_meal": .bool(meal != nil)
+        ])
         let fallbackCaption = trimmed.isEmpty
             ? (proofKind == "food" ? "Food accountability proof." : "Proof from today's training.")
             : trimmed
@@ -517,18 +713,45 @@ final class AppState: ObservableObject {
                 proofMediaData[hydratedPost.id] = photoData
             }
             socialStatusMessage = visibility == .privateOnly ? "Proof saved privately." : "Proof posted to \(visibility.rawValue.lowercased())."
+            track("proof_post_created", properties: [
+                "proof_kind": .string(proofKind),
+                "visibility": .string(visibility.rawValue),
+                "has_photo": .bool(photoData != nil)
+            ])
             saveSnapshot()
+            return true
         } catch {
-            socialStatusMessage = "Proof could not be saved: \(error.localizedDescription)"
+            socialStatusMessage = photoData == nil
+                ? "Proof could not be saved. Please try again."
+                : "Proof photo could not be saved. Please try again."
+            track("proof_post_failed", properties: [
+                "proof_kind": .string(proofKind),
+                "visibility": .string(visibility.rawValue),
+                "has_photo": .bool(photoData != nil)
+            ])
             saveSnapshot()
+            return false
+        }
+    }
+
+    private func hydrateProofMedia(for posts: [SocialProofPost]) async {
+        for post in posts {
+            guard proofMediaData[post.id] == nil, let mediaURL = post.mediaURL else {
+                continue
+            }
+            if let data = try? await apiClient.proofMediaData(from: mediaURL.absoluteString) {
+                proofMediaData[post.id] = data
+            }
         }
     }
 
     func loadSocialProfile(userId: String) async {
         do {
             selectedSocialProfile = try await apiClient.profileView(targetUserId: userId)
+            track("social_profile_viewed")
         } catch {
-            socialStatusMessage = "Profile unavailable: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "That profile isn't available right now.")
+            track("social_profile_view_failed")
         }
     }
 
@@ -541,14 +764,17 @@ final class AppState: ObservableObject {
         do {
             _ = try await apiClient.respondFollow(userId: remoteUserId, action: "remove")
             socialStatusMessage = "\(friend.name) removed."
+            track("friend_removed")
             await refreshSocial()
         } catch {
-            socialStatusMessage = "Could not remove friend: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't remove that friend. Try again in a moment.")
+            track("friend_remove_failed")
         }
     }
 
     func setAccountabilityEnabled(_ enabled: Bool) {
         accountabilityEnabled = enabled
+        track("accountability_enabled_updated", properties: ["enabled": .bool(enabled)])
         saveSnapshot()
         Task {
             do {
@@ -576,9 +802,11 @@ final class AppState: ObservableObject {
                 return candidate.withNudge(message)
             }
             socialStatusMessage = "Nudge queued for \(friend.name)."
+            track("nudge_sent")
             saveSnapshot()
         } catch {
-            socialStatusMessage = "Nudge failed: \(error.localizedDescription)"
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't send that nudge. Try again in a moment.")
+            track("nudge_failed")
         }
     }
 
@@ -674,7 +902,40 @@ final class AppState: ObservableObject {
         }
         await purchaseService.identify(appUserId: authSession.userId)
         isPremium = purchaseService.entitlementActive
+        track("premium_status_refreshed", properties: [
+            "is_premium": .bool(isPremium),
+            "active_plan": .string(purchaseService.activePlanLabel ?? "unknown")
+        ])
         saveSnapshot()
+    }
+
+    static func friendlyMessage(for error: Error, fallback: String) -> String {
+        if let apiError = error as? APIError {
+            return apiError.errorDescription ?? fallback
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                return "You appear to be offline. Check your connection and try again."
+            case .timedOut:
+                return "That took too long. Check your connection and try again."
+            default:
+                return fallback
+            }
+        }
+        return fallback
+    }
+
+    private func track(_ event: String, properties: [String: AnalyticsValue] = [:]) {
+        let session = authSession
+        Task {
+            await analytics.capture(
+                event,
+                distinctId: session?.userId,
+                authToken: session?.accessToken,
+                properties: properties
+            )
+        }
     }
 
     private func persist(_ proposal: ActionProposal, rawText: String?) async {
@@ -683,8 +944,15 @@ final class AppState: ObservableObject {
             lastSyncMessage = confirmation.persisted
                 ? "Saved to Fitcountable."
                 : "Saved. Sync will retry when the connection is available."
+            track("proposal_persisted", properties: [
+                "action_type": .string(proposal.actionType.rawValue),
+                "persisted": .bool(confirmation.persisted)
+            ])
         } catch {
-            lastSyncMessage = "Saved. Sync failed: \(error.localizedDescription)"
+            lastSyncMessage = "Saved on this device. Sync will retry when your connection is back."
+            track("proposal_persist_failed", properties: [
+                "action_type": .string(proposal.actionType.rawValue)
+            ])
         }
         saveSnapshot()
     }
@@ -735,6 +1003,9 @@ final class AppState: ObservableObject {
         authSession = nil
         apiClient.authToken = nil
         isPremium = false
+        Task {
+            await purchaseService.logOut()
+        }
         purchaseService.clearLocalEntitlementState()
         isProcessingCommand = false
         commandProcessingMessage = nil

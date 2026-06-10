@@ -100,11 +100,15 @@ struct WorkoutLog: Identifiable, Codable, Equatable {
     }
 
     var compactSetSummaries: [String] {
+        WorkoutLog.groupedSetSummaries(sets)
+    }
+
+    static func groupedSetSummaries(_ sets: [WorkoutSet]) -> [String] {
         guard sets.isEmpty == false else { return [] }
         var groups: [WorkoutSetGroup] = []
         for set in sets.sorted(by: { $0.setIndex < $1.setIndex }) {
-            if groups.last?.canAppend(set) == true {
-                groups[groups.count - 1].append(set)
+            if let index = groups.firstIndex(where: { $0.canAppend(set) }) {
+                groups[index].append(set)
             } else {
                 groups.append(WorkoutSetGroup(set: set))
             }
@@ -146,27 +150,16 @@ private struct WorkoutSetGroup {
     }
 
     var displayText: String {
-        "\(setLabel) · \(exerciseName) · \(reps) reps\(weightText)"
-    }
-
-    private var setLabel: String {
-        guard let first = indexes.first, let last = indexes.last else { return "Set" }
-        if indexes.count == 1 { return "Set \(first)" }
-        return indexesAreConsecutive ? "Sets \(first)-\(last)" : "Sets \(indexes.map(String.init).joined(separator: ", "))"
-    }
-
-    private var indexesAreConsecutive: Bool {
-        guard indexes.count > 1 else { return true }
-        return zip(indexes, indexes.dropFirst()).allSatisfy { current, next in
-            next == current + 1
+        let setsLabel = indexes.count == 1 ? "1 set" : "\(indexes.count) sets"
+        if weight > 0 {
+            return "\(exerciseName): \(setsLabel) x \(reps) @ \(weightDisplay)"
         }
+        return "\(exerciseName): \(setsLabel) x \(reps)"
     }
 
-    private var weightText: String {
-        guard weight > 0 else { return "" }
+    private var weightDisplay: String {
         let rounded = weight.rounded()
-        let display = abs(weight - rounded) < 0.01 ? "\(Int(rounded))" : String(format: "%.1f", weight)
-        return " · \(display) lb"
+        return abs(weight - rounded) < 0.01 ? "\(Int(rounded))" : String(format: "%.1f", weight)
     }
 }
 

@@ -95,16 +95,21 @@ struct ProfileView: View {
                         if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
                             appState.recordAppleSignIn(
                                 userIdentifier: credential.user,
-                                email: credential.email
+                                email: credential.email,
+                                identityToken: credential.identityToken.flatMap { String(data: $0, encoding: .utf8) },
+                                authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
                             )
                         }
                     case .failure(let error):
-                        appState.authStatusMessage = "Apple sign-in failed: \(error.localizedDescription)"
+                        if (error as? ASAuthorizationError)?.code != .canceled {
+                            appState.authStatusMessage = "Apple sign-in didn't finish. Please try again."
+                        }
                     }
                 }
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(appState.isSigningInWithApple)
             }
             Picker("Privacy", selection: Binding(
                 get: { appState.profile.privacyMode },
@@ -120,7 +125,7 @@ struct ProfileView: View {
                 .foregroundStyle(Color.fitMuted)
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private func compressedProfileImage(_ data: Data) -> Data {
@@ -172,7 +177,7 @@ struct ProfileView: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var paywall: some View {
@@ -196,8 +201,8 @@ struct ProfileView: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture {
             showingPremium = true
         }
@@ -242,20 +247,25 @@ struct ProfileView: View {
                         if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
                             appState.recordAppleSignIn(
                                 userIdentifier: credential.user,
-                                email: credential.email
+                                email: credential.email,
+                                identityToken: credential.identityToken.flatMap { String(data: $0, encoding: .utf8) },
+                                authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
                             )
                         }
                     case .failure(let error):
-                        appState.authStatusMessage = "Apple sign-in failed: \(error.localizedDescription)"
+                        if (error as? ASAuthorizationError)?.code != .canceled {
+                            appState.authStatusMessage = "Apple sign-in didn't finish. Please try again."
+                        }
                     }
                 }
                 .signInWithAppleButtonStyle(.black)
                 .frame(height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(appState.isSigningInWithApple)
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var support: some View {
@@ -274,7 +284,7 @@ struct ProfileView: View {
                 .foregroundStyle(Color.fitMuted)
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private func privacyDescription(_ mode: PrivacyMode) -> String {
@@ -293,88 +303,76 @@ private struct PremiumUpgradeView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    private var isPremiumActive: Bool {
+        appState.isPremium || appState.purchaseService.entitlementActive
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 14) {
-                            Image("MascotIcon")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 78, height: 78)
-                                .clipShape(RoundedRectangle(cornerRadius: 18))
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Fitcountable Premium")
-                                    .font(.title2.bold())
-                                Text("Upgrade when you want Fitcountable to coach more of the work.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.fitMuted)
-                            }
-                        }
-                        Text("Premium gives you more voice and text logging, smarter workout and nutrition plans, longer progress history, and accountability nudges that feel personal instead of generic.")
-                            .foregroundStyle(Color.fitMuted)
-                    }
+                VStack(alignment: .leading, spacing: 20) {
+                    heroHeader
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 14) {
                         PremiumBenefit(title: "More voice and text logs", icon: "mic.fill")
                         PremiumBenefit(title: "Smarter training and nutrition plans", icon: "list.bullet.clipboard")
                         PremiumBenefit(title: "Longer progress history", icon: "chart.line.uptrend.xyaxis")
                         PremiumBenefit(title: "More personal accountability nudges", icon: "bell.badge")
                     }
-                    .padding()
-                    .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(18)
+                    .fitCardSurface()
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    if isPremiumActive {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.title3)
+                                .foregroundStyle(Color.fitGreen)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Premium is active")
+                                    .font(.headline)
+                                Text("\(appState.purchaseService.activePlanLabel ?? "Premium") plan · manage in App Store settings")
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.fitMuted)
+                            }
+                            Spacer()
+                        }
+                        .padding(16)
+                        .background(Color.fitGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("Choose a plan")
-                            .font(.headline)
+                            .font(.system(.title3, design: .rounded, weight: .bold))
                         ForEach(appState.purchaseService.packages, id: \.self) { package in
-                            let isCurrentPlan = appState.purchaseService.isActivePackage(package)
-                            let canPurchase = appState.purchaseService.hasLoadedStoreProducts && !isCurrentPlan
-                            Button {
+                            PremiumPlanRow(
+                                package: package,
+                                isCurrentPlan: appState.purchaseService.isActivePackage(package),
+                                canPurchase: appState.purchaseService.hasLoadedStoreProducts && !appState.purchaseService.isActivePackage(package)
+                            ) {
                                 Task {
+                                    appState.trackPremiumPurchaseStarted(package: package)
                                     await appState.purchaseService.purchase(package: package)
                                     await appState.refreshPremiumStatus()
+                                    appState.trackPremiumPurchaseFinished(package: package)
                                 }
-                            } label: {
-                                HStack {
-                                    Text(package)
-                                        .font(.headline)
-                                    Spacer()
-                                    if isCurrentPlan {
-                                        Text("Current")
-                                            .font(.caption.weight(.bold))
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .foregroundStyle(Color.fitGreen)
-                                            .background(Color.fitGreen.opacity(0.14), in: Capsule())
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(Color.fitGreen)
-                                    } else {
-                                        Image(systemName: "chevron.right")
-                                            .foregroundStyle(Color.fitMuted)
-                                    }
-                                }
-                                .padding()
-                                .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(.plain)
-                            .disabled(!canPurchase)
-                            .opacity(canPurchase || isCurrentPlan ? 1 : 0.72)
                         }
                         if appState.purchaseService.isLoadingOfferings && !appState.purchaseService.hasLoadedStoreProducts {
-                            Text("Refreshing App Store pricing...")
-                                .font(.footnote)
-                                .foregroundStyle(Color.fitMuted)
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("Loading plans from the App Store...")
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.fitMuted)
+                            }
+                            .padding(.top, 2)
                         }
-                        if appState.isPremium || appState.purchaseService.entitlementActive {
-                            Label("\(appState.purchaseService.activePlanLabel ?? "Premium") active", systemImage: "checkmark.seal.fill")
-                                .foregroundStyle(Color.fitGreen)
-                        } else {
+                        if isPremiumActive == false {
                             Button {
                                 Task {
+                                    appState.trackPremiumRestoreStarted()
                                     await appState.purchaseService.restore()
                                     await appState.refreshPremiumStatus()
+                                    appState.trackPremiumRestoreFinished()
                                 }
                             } label: {
                                 Text("Already upgraded? Restore access")
@@ -389,12 +387,17 @@ private struct PremiumUpgradeView: View {
                                 .font(.footnote)
                                 .foregroundStyle(Color.fitMuted)
                         }
+                        Text("Subscriptions renew automatically and can be cancelled anytime in App Store settings.")
+                            .font(.caption)
+                            .foregroundStyle(Color.fitMuted)
+                            .padding(.top, 4)
                     }
                 }
                 .padding()
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Upgrade")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
@@ -404,11 +407,103 @@ private struct PremiumUpgradeView: View {
             }
         }
         .onAppear {
+            appState.trackPremiumViewed()
             Task {
                 await appState.refreshPremiumStatus()
                 await appState.purchaseService.loadOfferings()
             }
         }
+    }
+
+    private var heroHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 16) {
+                Image("MascotIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 74, height: 74)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 10, y: 5)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("FITCOUNTABLE")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .tracking(1.4)
+                    Text("Premium")
+                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+            }
+            Text("Upgrade when you want Fitcountable to coach more of the work — logging stays free.")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient.fitAccent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color.fitGreen.opacity(0.25), radius: 18, y: 8)
+    }
+}
+
+private struct PremiumPlanRow: View {
+    var package: String
+    var isCurrentPlan: Bool
+    var canPurchase: Bool
+    var purchase: () -> Void
+
+    private var planName: String {
+        package.components(separatedBy: " $").first ?? package
+    }
+
+    private var planPrice: String {
+        guard let range = package.range(of: "$") else { return "" }
+        return String(package[range.lowerBound...])
+    }
+
+    private var billingDetail: String {
+        if planName.localizedCaseInsensitiveContains("yearly") { return "Billed once a year · best value" }
+        if planName.localizedCaseInsensitiveContains("monthly") { return "Billed monthly · cancel anytime" }
+        if planName.localizedCaseInsensitiveContains("lifetime") { return "One-time purchase · yours forever" }
+        return "Premium access"
+    }
+
+    var body: some View {
+        Button(action: purchase) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(planName)
+                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .foregroundStyle(Color.fitInk)
+                    Text(billingDetail)
+                        .font(.caption)
+                        .foregroundStyle(Color.fitMuted)
+                }
+                Spacer()
+                if isCurrentPlan {
+                    Text("Current plan")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(Color.fitGreen)
+                        .background(Color.fitGreen.opacity(0.14), in: Capsule())
+                } else {
+                    Text(planPrice)
+                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .foregroundStyle(Color.fitInk)
+                }
+            }
+            .padding(16)
+            .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isCurrentPlan ? Color.fitGreen : Color.fitBorder, lineWidth: isCurrentPlan ? 2 : 1)
+            )
+        }
+        .buttonStyle(FitPressableButtonStyle())
+        .disabled(!canPurchase)
+        .opacity(canPurchase || isCurrentPlan ? 1 : 0.6)
     }
 }
 

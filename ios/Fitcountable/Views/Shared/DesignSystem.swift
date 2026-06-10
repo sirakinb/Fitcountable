@@ -44,6 +44,74 @@ extension Color {
     })
 }
 
+extension LinearGradient {
+    static let fitAccent = LinearGradient(
+        colors: [Color.fitGreen, Color.fitBlue],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+}
+
+private struct FitCardSurface: ViewModifier {
+    var cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color.fitCard, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.fitBorder, lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 14, y: 6)
+    }
+}
+
+extension View {
+    func fitCardSurface(cornerRadius: CGFloat = 18) -> some View {
+        modifier(FitCardSurface(cornerRadius: cornerRadius))
+    }
+}
+
+struct EmptyStateCard: View {
+    var systemImage: String
+    var title: String
+    var subtitle: String
+    var tint: Color = .fitBlue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.title)
+                .foregroundStyle(tint)
+                .frame(width: 52, height: 52)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Text(title)
+                .font(.headline)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(Color.fitMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fitCardSurface()
+    }
+}
+
+struct FitPressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: configuration.isPressed)
+    }
+}
+
+@MainActor
+func hideKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
 struct ProfilePhotoView: View {
     var imageData: Data?
     var imageURL: URL? = nil
@@ -106,11 +174,12 @@ struct MetricCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(Color.fitMuted)
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(color)
+                .tracking(0.6)
             Text(value)
-                .font(.system(.title2, design: .rounded, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .black))
                 .foregroundStyle(Color.fitInk)
             Text(detail)
                 .font(.footnote)
@@ -118,10 +187,10 @@ struct MetricCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.fitBorder, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(color.opacity(0.18), lineWidth: 1)
         )
     }
 }
@@ -133,7 +202,7 @@ struct SectionHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.headline)
+                .font(.system(.title3, design: .rounded, weight: .bold))
             Spacer()
             if let action {
                 Text(action)
@@ -148,16 +217,22 @@ struct PrimaryButton: View {
     var title: String
     var systemImage: String?
     var action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage ?? "arrow.right")
-                .font(.headline)
+                .font(.system(.headline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient.fitAccent,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .shadow(color: Color.fitGreen.opacity(isEnabled ? 0.28 : 0), radius: 12, y: 6)
+                .opacity(isEnabled ? 1 : 0.45)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.fitGreen)
-        .controlSize(.large)
+        .buttonStyle(FitPressableButtonStyle())
     }
 }

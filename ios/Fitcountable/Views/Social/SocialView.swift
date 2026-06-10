@@ -30,11 +30,20 @@ struct SocialView: View {
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Accountability")
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
-                Button {
-                    Task { await appState.refreshSocial() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await appState.refreshSocial() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        hideKeyboard()
+                    }
                 }
             }
             .task {
@@ -86,7 +95,7 @@ struct SocialView: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var proofComposer: some View {
@@ -134,7 +143,7 @@ struct SocialView: View {
                     .resizable()
                     .scaledToFill()
                     .frame(height: 210)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(alignment: .topTrailing) {
                         Button {
                             self.proofPhotoData = nil
@@ -181,24 +190,39 @@ struct SocialView: View {
                 let workout = proofKind == .workout ? selectedWorkout : nil
                 let meal = proofKind == .food ? selectedMeal : nil
                 let kind = proofKind.rawValue
-                proofCaption = ""
-                proofPhotoData = nil
-                selectedProofPhoto = nil
                 Task {
-                    await appState.createProofPost(caption: caption, visibility: visibility, workout: workout, meal: meal, proofKind: kind, photoData: photoData)
+                    let didSave = await appState.createProofPost(caption: caption, visibility: visibility, workout: workout, meal: meal, proofKind: kind, photoData: photoData)
+                    guard didSave else { return }
+                    proofCaption = ""
+                    proofPhotoData = nil
+                    selectedProofPhoto = nil
                 }
             } label: {
-                Label("Save proof", systemImage: "camera.fill")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    if appState.isSavingProof {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "camera.fill")
+                    }
+                    Text(appState.isSavingProof ? "Saving proof..." : "Save proof")
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.fitBlue)
+            .disabled(appState.isSavingProof)
+            if appState.isSavingProof {
+                Text(proofPhotoData == nil ? "Saving your proof post." : "Uploading your photo and saving your proof post.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.fitMuted)
+            }
             Text("Private stays with you. Friends goes to approved friends. Public can appear on your profile.")
                 .font(.footnote)
                 .foregroundStyle(Color.fitMuted)
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var requestSections: some View {
@@ -228,7 +252,11 @@ struct SocialView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Friends' proof", action: nil)
             if appState.proofPosts.isEmpty {
-                SocialEmptyCard()
+                EmptyStateCard(
+                    systemImage: "camera.metering.center.weighted",
+                    title: "No proof posts yet",
+                    subtitle: "Post proof after a workout or meal, or approve friends to see their updates here."
+                )
             } else {
                 ForEach(appState.proofPosts) { post in
                     ProofPostCard(post: post, profilePhotoData: appState.profilePhotoData, proofPhotoData: appState.proofMediaData[post.id])
@@ -266,7 +294,7 @@ struct SocialView: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var friendList: some View {
@@ -278,7 +306,7 @@ struct SocialView: View {
                     .foregroundStyle(Color.fitMuted)
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+                    .fitCardSurface()
             } else {
                 ForEach(appState.friends) { friend in
                     FriendAccountabilityRow(friend: friend) {
@@ -338,7 +366,7 @@ struct SocialView: View {
             }
         }
         .padding(12)
-        .background(Color.fitMist, in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.fitMist, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func shortDate(_ date: Date) -> String {
@@ -450,10 +478,10 @@ private struct ProofPostCard: View {
                 .padding()
             }
             .frame(height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 
     private var relativeDate: String {
@@ -480,9 +508,11 @@ private struct ShareLinkButton: View {
                 showingFallback = true
             }
         } label: {
-            Image(systemName: "square.and.arrow.up")
+            Label("Story", systemImage: "square.and.arrow.up")
+                .font(.caption.weight(.bold))
         }
         .buttonStyle(.bordered)
+        .tint(.fitBlue)
         .sheet(isPresented: $showingFallback) {
             if let fallbackImage {
                 ActivityView(items: [fallbackImage])
@@ -543,7 +573,7 @@ private struct RequestRow: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 }
 
@@ -614,7 +644,7 @@ private struct FriendAccountabilityRow: View {
             }
         }
         .padding()
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+        .fitCardSurface()
     }
 }
 
@@ -668,23 +698,6 @@ private struct SocialProfileSheet: View {
         .task {
             await appState.loadSocialProfile(userId: profile.id)
         }
-    }
-}
-
-private struct SocialEmptyCard: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: "camera.metering.center.weighted")
-                .font(.largeTitle)
-                .foregroundStyle(Color.fitBlue)
-            Text("No proof posts yet")
-                .font(.headline)
-            Text("Post proof after a workout, or approve friends to see their updates here.")
-                .foregroundStyle(Color.fitMuted)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

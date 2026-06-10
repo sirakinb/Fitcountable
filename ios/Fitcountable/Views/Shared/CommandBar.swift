@@ -41,7 +41,11 @@ struct CommandBar: View {
                 .disabled(appState.isProcessingCommand)
             }
             .padding(12)
-            .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 8))
+            .background(Color.fitCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.fitBorder, lineWidth: 1)
+            )
             .shadow(color: .black.opacity(0.08), radius: 16, y: 8)
             .onChange(of: appState.aiInputFocusRequest) { _, _ in
                 isCommandFieldFocused = true

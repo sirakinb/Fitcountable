@@ -133,11 +133,27 @@ final class PurchaseService: ObservableObject {
             applyCustomerInfo(info)
             lastError = entitlementActive ? nil : "No previous Premium purchase was found for this Apple Account."
         } catch {
-            lastError = error.localizedDescription
+            lastError = "Restore didn't finish. Please try again in a moment."
         }
         #else
         entitlementActive = true
         #endif
+    }
+
+    func logOut() async {
+        guard isConfigured else {
+            clearLocalEntitlementState()
+            return
+        }
+        #if canImport(RevenueCat)
+        do {
+            _ = try await Purchases.shared.logOut()
+        } catch {
+            lastError = nil
+        }
+        configuredAppUserId = nil
+        #endif
+        clearLocalEntitlementState()
     }
 
     func purchase(package label: String) async {
@@ -152,13 +168,21 @@ final class PurchaseService: ObservableObject {
         }
         do {
             let result = try await Purchases.shared.purchase(package: package)
+            if result.userCancelled {
+                lastError = nil
+                return
+            }
             applyCustomerInfo(result.customerInfo)
             if entitlementActive == false {
                 await refreshCustomerInfo()
             }
             lastError = entitlementActive ? nil : "Upgrade is processing. Please try Restore if Premium does not activate shortly."
         } catch {
-            lastError = "Purchase failed: \(error.localizedDescription)"
+            if let errorCode = error as? ErrorCode, errorCode == .purchaseCancelledError {
+                lastError = nil
+            } else {
+                lastError = "Purchase didn't finish. Please try again in a moment."
+            }
         }
         #else
         entitlementActive = true
