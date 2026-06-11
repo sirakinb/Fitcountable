@@ -341,8 +341,8 @@ begin
     'set_count', coalesce((select count(*)::int from workout_sets where workout_id = v_post.workout_id), 0),
     'caption', v_post.caption,
     'visibility', v_post.visibility,
-    'media_url', v_post.media_url,
-    'media_type', v_post.media_type,
+    'media_url', case when v_post.media_url like 'data:%' then null else v_post.media_url end,
+    'media_type', case when v_post.media_url like 'data:%' then null else v_post.media_type end,
     'proof_kind', v_post.proof_kind,
     'detail_lines', v_post.detail_lines,
     'created_at', v_post.created_at,
@@ -365,50 +365,56 @@ begin
   end if;
 
   return coalesce((
-    select jsonb_agg(jsonb_build_object(
-      'id', pp.id,
-      'user_id', pp.user_id,
-      'display_name', coalesce(p.display_name, 'Fitcountable User'),
-      'avatar_url', p.avatar_url,
-      'workout_id', pp.workout_id,
-      'meal_id', pp.meal_id,
-      'workout_title',
-        case
-          when pp.proof_kind = 'food' then coalesce(initcap(m.meal_type) || ' proof', 'Food proof')
-          else coalesce(w.title, 'Gym proof')
-        end,
-      'duration_minutes', w.duration_minutes,
-      'set_count', coalesce(ws.set_count, 0),
-      'caption', pp.caption,
-      'visibility', pp.visibility,
-      'media_url', pp.media_url,
-      'media_type', pp.media_type,
-      'proof_kind', pp.proof_kind,
-      'detail_lines', pp.detail_lines,
-      'created_at', pp.created_at,
-      'relationship',
-        case
-          when pp.user_id = v_user_id then 'own'
-          when public.fc_are_friends(v_user_id, pp.user_id) then 'friend'
-          else 'public'
-        end
-    ) order by pp.created_at desc)
-    from proof_posts pp
-    join profiles p on p.user_id = pp.user_id
-    left join workouts w on w.id = pp.workout_id
-    left join meals m on m.id = pp.meal_id
-    left join (
-      select workout_id, count(*)::int as set_count
-      from workout_sets
-      group by workout_id
-    ) ws on ws.workout_id = pp.workout_id
-    where (p_target_user_id is null or pp.user_id = p_target_user_id)
-      and (
-        pp.user_id = v_user_id
-        or pp.visibility = 'public'
-        or (pp.visibility = 'friends' and public.fc_are_friends(v_user_id, pp.user_id))
-      )
-    limit 50
+    select jsonb_agg(feed.post_json order by feed.created_at desc)
+    from (
+      select
+        pp.created_at,
+        jsonb_build_object(
+          'id', pp.id,
+          'user_id', pp.user_id,
+          'display_name', coalesce(p.display_name, 'Fitcountable User'),
+          'avatar_url', p.avatar_url,
+          'workout_id', pp.workout_id,
+          'meal_id', pp.meal_id,
+          'workout_title',
+            case
+              when pp.proof_kind = 'food' then coalesce(initcap(m.meal_type) || ' proof', 'Food proof')
+              else coalesce(w.title, 'Gym proof')
+            end,
+          'duration_minutes', w.duration_minutes,
+          'set_count', coalesce(ws.set_count, 0),
+          'caption', pp.caption,
+          'visibility', pp.visibility,
+          'media_url', case when pp.media_url like 'data:%' then null else pp.media_url end,
+          'media_type', case when pp.media_url like 'data:%' then null else pp.media_type end,
+          'proof_kind', pp.proof_kind,
+          'detail_lines', pp.detail_lines,
+          'created_at', pp.created_at,
+          'relationship',
+            case
+              when pp.user_id = v_user_id then 'own'
+              when public.fc_are_friends(v_user_id, pp.user_id) then 'friend'
+              else 'public'
+            end
+        ) as post_json
+      from proof_posts pp
+      join profiles p on p.user_id = pp.user_id
+      left join workouts w on w.id = pp.workout_id
+      left join meals m on m.id = pp.meal_id
+      left join (
+        select workout_id, count(*)::int as set_count
+        from workout_sets
+        group by workout_id
+      ) ws on ws.workout_id = pp.workout_id
+      where (p_target_user_id is null or pp.user_id = p_target_user_id)
+        and (
+          pp.user_id = v_user_id
+          or pp.visibility = 'public'
+          or (pp.visibility = 'friends' and public.fc_are_friends(v_user_id, pp.user_id))
+        )
+      order by pp.created_at desc
+      limit 50
+    ) feed
   ), '[]'::jsonb);
 end;
 $$;
