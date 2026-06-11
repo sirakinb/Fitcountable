@@ -47,6 +47,13 @@ final class AppState: ObservableObject {
     private var isVoiceHoldActive = false
 
     init() {
+        apiClient.onSessionRefreshed = { [weak self] session in
+            guard let self else { return }
+            self.authSession = session
+            self.apiClient.authToken = session.accessToken
+            self.apiClient.refreshToken = session.refreshToken
+            self.saveSnapshot()
+        }
         if ProcessInfo.processInfo.environment["FITCOUNTABLE_RESET_STATE"] == "1" {
             UserDefaults.standard.removeObject(forKey: snapshotKey)
         }
@@ -243,6 +250,7 @@ final class AppState: ObservableObject {
             let session = try await apiClient.signIn(email: email, password: password)
             authSession = session
             apiClient.authToken = session.accessToken
+            apiClient.refreshToken = session.refreshToken
             authStatusMessage = "Signed in as \(session.email). Confirmed logs will sync."
             _ = try? await apiClient.bootstrapProfile(displayName: profile.displayName, goalType: profile.goalType, privacyMode: profile.privacyMode, avatarData: profilePhotoData)
             await refreshSocial()
@@ -274,6 +282,7 @@ final class AppState: ObservableObject {
                 )
                 authSession = session
                 apiClient.authToken = session.accessToken
+                apiClient.refreshToken = session.refreshToken
                 authStatusMessage = "Signed in with Apple as \(displayEmail)."
                 await purchaseService.identify(appUserId: session.userId)
                 isPremium = purchaseService.entitlementActive
@@ -287,6 +296,7 @@ final class AppState: ObservableObject {
                 ])
             } catch {
                 apiClient.authToken = nil
+                apiClient.refreshToken = nil
                 authStatusMessage = "Apple sign-in could not finish. Check your connection and try again."
                 lastSyncMessage = nil
                 saveSnapshot()
@@ -319,6 +329,7 @@ final class AppState: ObservableObject {
         track("signed_out")
         authSession = nil
         apiClient.authToken = nil
+        apiClient.refreshToken = nil
         selectedTab = .today
         hasCompletedOnboarding = false
         isVoicePromptActive = false
@@ -755,6 +766,43 @@ final class AppState: ObservableObject {
         }
     }
 
+    func removeProofPhoto(_ post: SocialProofPost) async {
+        guard post.relationship == "own" else { return }
+        socialStatusMessage = "Removing photo..."
+        do {
+            _ = try await apiClient.removeProofMedia(postId: post.id)
+            if let index = proofPosts.firstIndex(where: { $0.id == post.id }) {
+                proofPosts[index].mediaURL = nil
+                proofPosts[index].mediaType = nil
+            }
+            proofMediaData.removeValue(forKey: post.id)
+            socialStatusMessage = "Photo removed."
+            track("proof_photo_removed")
+            saveSnapshot()
+        } catch {
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't remove that photo. Try again in a moment.")
+            track("proof_photo_remove_failed")
+            saveSnapshot()
+        }
+    }
+
+    func deleteProofPost(_ post: SocialProofPost) async {
+        guard post.relationship == "own" else { return }
+        socialStatusMessage = "Deleting proof..."
+        do {
+            _ = try await apiClient.deleteProofPost(postId: post.id)
+            proofPosts.removeAll { $0.id == post.id }
+            proofMediaData.removeValue(forKey: post.id)
+            socialStatusMessage = "Proof deleted."
+            track("proof_post_deleted")
+            saveSnapshot()
+        } catch {
+            socialStatusMessage = AppState.friendlyMessage(for: error, fallback: "Couldn't delete that proof. Try again in a moment.")
+            track("proof_post_delete_failed")
+            saveSnapshot()
+        }
+    }
+
     private func hydrateProofMedia(for posts: [SocialProofPost]) async {
         for post in posts {
             guard proofMediaData[post.id] == nil, let mediaURL = post.mediaURL else {
@@ -1023,6 +1071,7 @@ final class AppState: ObservableObject {
         accountabilityEnabled = false
         authSession = nil
         apiClient.authToken = nil
+        apiClient.refreshToken = nil
         isPremium = false
         Task {
             await purchaseService.logOut()
@@ -1060,6 +1109,7 @@ final class AppState: ObservableObject {
         lastSyncMessage = snapshot.lastSyncMessage
         socialStatusMessage = snapshot.socialStatusMessage
         apiClient.authToken = snapshot.authSession?.accessToken
+        apiClient.refreshToken = snapshot.authSession?.refreshToken
         if authSession == nil {
             hasCompletedOnboarding = false
             authStatusMessage = "Sign in with Apple before entering Fitcountable."
@@ -1160,6 +1210,7 @@ final class AppState: ObservableObject {
             refreshToken: nil
         )
         apiClient.authToken = authSession?.accessToken
+        apiClient.refreshToken = authSession?.refreshToken
         authStatusMessage = "Signed in with Apple."
         lastSyncMessage = "Review and confirm AI drafts before saving."
         socialStatusMessage = "Nudge queued for Jordan."

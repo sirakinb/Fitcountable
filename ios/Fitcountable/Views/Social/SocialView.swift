@@ -272,7 +272,17 @@ struct SocialView: View {
                 )
             } else {
                 ForEach(appState.proofPosts) { post in
-                    ProofPostCard(post: post, profilePhotoData: appState.profilePhotoData, proofPhotoData: appState.proofMediaData[post.id])
+                    ProofPostCard(
+                        post: post,
+                        profilePhotoData: appState.profilePhotoData,
+                        proofPhotoData: appState.proofMediaData[post.id],
+                        onRemovePhoto: {
+                            Task { await appState.removeProofPhoto(post) }
+                        },
+                        onDelete: {
+                            Task { await appState.deleteProofPost(post) }
+                        }
+                    )
                 }
             }
         }
@@ -413,6 +423,9 @@ private struct ProofPostCard: View {
     var post: SocialProofPost
     var profilePhotoData: Data? = nil
     var proofPhotoData: Data? = nil
+    var onRemovePhoto: (() -> Void)?
+    var onDelete: (() -> Void)?
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -432,7 +445,30 @@ private struct ProofPostCard: View {
                         .foregroundStyle(Color.fitMuted)
                 }
                 Spacer()
-                ShareLinkButton(post: post, proofPhotoData: proofPhotoData)
+                HStack(spacing: 8) {
+                    ShareLinkButton(post: post, proofPhotoData: proofPhotoData)
+                    if post.relationship == "own" {
+                        Menu {
+                            if hasProofImage {
+                                Button {
+                                    onRemovePhoto?()
+                                } label: {
+                                    Label("Remove photo", systemImage: "photo.badge.minus")
+                                }
+                            }
+                            Button(role: .destructive) {
+                                isConfirmingDelete = true
+                            } label: {
+                                Label("Delete proof", systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.fitMuted)
+                    }
+                }
             }
 
             Text(post.workoutTitle)
@@ -505,6 +541,14 @@ private struct ProofPostCard: View {
         }
         .padding()
         .fitCardSurface()
+        .confirmationDialog("Delete this proof?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete proof", role: .destructive) {
+                onDelete?()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the proof post from Fitcountable.")
+        }
     }
 
     private var relativeDate: String {
