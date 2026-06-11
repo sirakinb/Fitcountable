@@ -27,6 +27,7 @@ struct SocialView: View {
                     friendList
                 }
                 .padding()
+                .padding(.bottom, 52)
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Accountability")
@@ -64,9 +65,10 @@ struct SocialView: View {
     private var accountabilityCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 6) {
+                    EyebrowText(text: "Your circle")
                     Text("Accountability mode")
-                        .font(.title2.bold())
+                        .font(.system(.title2, design: .rounded, weight: .black))
                     Text(appState.accountabilityEnabled ? "Friends can see proof you mark for friends." : "Private by default. Turn on sharing when ready.")
                         .font(.subheadline)
                         .foregroundStyle(Color.fitMuted)
@@ -77,6 +79,7 @@ struct SocialView: View {
                     set: { appState.setAccountabilityEnabled($0) }
                 ))
                 .labelsHidden()
+                .tint(.fitGreen)
             }
 
             Picker("Visibility", selection: $visibility) {
@@ -158,19 +161,29 @@ struct SocialView: View {
                     }
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 Button {
                     showingCamera = true
                 } label: {
                     Label("Take photo", systemImage: "camera.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(Color.fitBlue.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(FitPressableButtonStyle())
+                .foregroundStyle(Color.fitBlue)
                 .disabled(UIImagePickerController.isSourceTypeAvailable(.camera) == false)
 
                 PhotosPicker(selection: $selectedProofPhoto, matching: .images) {
                     Label("Choose photo", systemImage: "photo")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(Color.fitGreen.opacity(0.12), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(FitPressableButtonStyle())
+                .foregroundStyle(Color.fitGreen)
             }
 
             TextField(proofKind == .workout ? "Caption for today's lift or gym session" : "Caption for this meal or food choice", text: $proofCaption, axis: .vertical)
@@ -423,16 +436,26 @@ private struct ProofPostCard: View {
             }
 
             Text(post.workoutTitle)
-                .font(.title3.bold())
+                .font(.system(.title3, design: .rounded, weight: .black))
 
-            HStack(spacing: 0) {
-                ProofMetric(title: post.proofKind == "food" ? "Type" : "Time", value: post.proofKind == "food" ? "Food" : (post.durationMinutes.map { "\($0)m" } ?? "Logged"))
-                Divider()
-                ProofMetric(title: "Proof", value: post.proofKind == "food" ? "Meal" : (post.workoutTitle == "Workout proof" ? "Logged" : "Workout"))
-                Divider()
-                ProofMetric(title: "Audience", value: post.visibility.rawValue)
+            HStack(spacing: 8) {
+                ProofChip(
+                    icon: post.proofKind == "food" ? "fork.knife" : "stopwatch",
+                    text: post.proofKind == "food" ? "Food" : (post.durationMinutes.map { "\($0)m" } ?? "Logged"),
+                    tint: .fitBlue
+                )
+                ProofChip(
+                    icon: "checkmark.seal.fill",
+                    text: post.proofKind == "food" ? "Meal" : (post.workoutTitle == "Workout proof" ? "Logged" : "Workout"),
+                    tint: .fitGreen
+                )
+                ProofChip(
+                    icon: post.visibility == .privateOnly ? "lock.fill" : (post.visibility == .friends ? "person.2.fill" : "globe"),
+                    text: post.visibility.rawValue,
+                    tint: .orange
+                )
+                Spacer()
             }
-            .frame(height: 54)
 
             if let detailLines = post.detailLines, detailLines.isEmpty == false {
                 VStack(alignment: .leading, spacing: 5) {
@@ -521,21 +544,23 @@ private struct ShareLinkButton: View {
     }
 }
 
-private struct ProofMetric: View {
-    var title: String
-    var value: String
+private struct ProofChip: View {
+    var icon: String
+    var text: String
+    var tint: Color
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(Color.fitMuted)
-            Text(value)
-                .font(.headline.bold())
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.bold))
+            Text(text)
+                .font(.caption.weight(.bold))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
         }
-        .frame(maxWidth: .infinity)
+        .foregroundStyle(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.12), in: Capsule())
     }
 }
 
@@ -623,9 +648,16 @@ private struct FriendAccountabilityRow: View {
                         .foregroundStyle(Color.fitMuted)
                 }
                 Spacer()
-                Text("\(friend.streak)d")
-                    .font(.title3.bold())
-                    .foregroundStyle(Color.fitGreen)
+                HStack(spacing: 4) {
+                    Image(systemName: "flame.fill")
+                        .font(.caption.weight(.bold))
+                    Text("\(friend.streak)d")
+                        .font(.subheadline.weight(.black))
+                }
+                .foregroundStyle(Color.fitGreen)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(Color.fitGreen.opacity(0.12), in: Capsule())
             }
             if let lastNudge = friend.lastNudge {
                 Text("Last nudge: \(lastNudge)")

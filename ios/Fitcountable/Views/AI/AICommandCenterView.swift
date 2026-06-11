@@ -18,6 +18,7 @@ struct AICommandCenterView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 52)
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.commands)
             }
             .background(Color.fitSurface.ignoresSafeArea())
@@ -120,8 +121,16 @@ struct CommandReviewCard: View {
             case .parsing:
                 ProgressView("Building your editable log...")
             case .failed(let message):
-                Text(message)
-                    .foregroundStyle(.red)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(message)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.fitInk)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             case .confirmed:
                 if let proposal = command.proposal {
                     proposalView(proposal, isConfirmed: true)
@@ -139,12 +148,20 @@ struct CommandReviewCard: View {
     private func proposalView(_ proposal: ActionProposal, isConfirmed: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(proposal.actionType.displayName)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.fitBlue)
+                HStack(spacing: 5) {
+                    Image(systemName: actionIcon(for: proposal.actionType))
+                        .font(.caption2.weight(.bold))
+                    Text(proposal.actionType.displayName)
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(Color.fitBlue)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.fitBlue.opacity(0.11), in: Capsule())
                 Spacer()
-                Text("\(Int(proposal.confidence * 100))%")
+                Text("\(Int(proposal.confidence * 100))% match")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.fitMuted)
             }
             Text(proposal.summary)
                 .foregroundStyle(Color.fitMuted)
@@ -292,6 +309,18 @@ struct CommandReviewCard: View {
     private func dismissKeyboard() {
         isContextFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    private func actionIcon(for actionType: ActionType) -> String {
+        switch actionType {
+        case .logWorkout: "dumbbell.fill"
+        case .logMeal, .estimateFood: "fork.knife"
+        case .updateGoal: "target"
+        case .createWorkoutPlan, .createNutritionPlan: "list.bullet.clipboard"
+        case .createAccountabilityNudge: "bell.badge"
+        case .summarizeProgress: "chart.line.uptrend.xyaxis"
+        case .correctLastLog: "arrow.uturn.backward"
+        }
     }
 
     private func proposalNeedsMoreInfo(_ proposal: ActionProposal) -> Bool {
