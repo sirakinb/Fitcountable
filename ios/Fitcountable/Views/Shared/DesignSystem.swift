@@ -54,13 +54,116 @@ private struct FitCardSurface: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.fitBorder, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.05), radius: 14, y: 6)
+            .shadow(color: .black.opacity(0.06), radius: 18, y: 8)
     }
 }
 
 extension View {
-    func fitCardSurface(cornerRadius: CGFloat = 18) -> some View {
+    func fitCardSurface(cornerRadius: CGFloat = 20) -> some View {
         modifier(FitCardSurface(cornerRadius: cornerRadius))
+    }
+}
+
+struct EyebrowText: View {
+    var text: String
+    var color: Color = .fitGreen
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.caption.weight(.heavy))
+            .foregroundStyle(color)
+            .tracking(1.2)
+    }
+}
+
+struct CaloriesRing: View {
+    var consumed: Int
+    var goal: Int
+    var lineWidth: CGFloat = 14
+
+    private var progress: Double {
+        guard goal > 0 else { return 0 }
+        return min(Double(consumed) / Double(goal), 1)
+    }
+
+    private var remaining: Int {
+        max(goal - consumed, 0)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.fitMuted.opacity(0.16), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    AngularGradient(
+                        colors: [Color.fitGreen.opacity(0.75), Color.fitGreen],
+                        center: .center,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(360 * progress)
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.6, dampingFraction: 0.85), value: progress)
+            VStack(spacing: 2) {
+                Text("\(remaining)")
+                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .foregroundStyle(Color.fitInk)
+                    .contentTransition(.numericText())
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text("left")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.fitMuted)
+            }
+            .padding(lineWidth + 8)
+        }
+    }
+}
+
+struct MacroBar: View {
+    var title: String
+    var consumed: Int
+    var goal: Int
+    var color: Color
+
+    private var progress: Double {
+        guard goal > 0 else { return 0 }
+        return min(Double(consumed) / Double(goal), 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.fitInk)
+                Spacer()
+                (
+                    Text("\(consumed)")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(Color.fitInk)
+                    + Text(" / \(goal)g")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.fitMuted)
+                )
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            }
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(color.opacity(0.14))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(progress * proxy.size.width, progress > 0 ? 8 : 0))
+                        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: progress)
+                }
+            }
+            .frame(height: 8)
+        }
     }
 }
 

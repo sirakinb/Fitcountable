@@ -39,6 +39,7 @@ struct LogView: View {
                     }
                 }
                 .padding()
+                .padding(.bottom, 52)
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Log")
@@ -67,8 +68,9 @@ struct LogView: View {
     private var workoutForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             formCard {
+                EyebrowText(text: "Manual log", color: .orange)
                 Text("Workout journal")
-                    .font(.title2.bold())
+                    .font(.system(.title2, design: .rounded, weight: .black))
                 TextField("Workout title", text: $workoutTitle)
                     .textFieldStyle(.roundedBorder)
                 Stepper("Duration: \(duration) min", value: $duration, in: 5...240, step: 5)
@@ -157,8 +159,9 @@ struct LogView: View {
     private var foodForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             formCard {
+                EyebrowText(text: "Manual log", color: .fitBlue)
                 Text("Food and macros")
-                    .font(.title2.bold())
+                    .font(.system(.title2, design: .rounded, weight: .black))
                 Picker("Meal", selection: $mealType) {
                     ForEach(MealType.allCases) { type in
                         Text(type.rawValue).tag(type)
@@ -380,15 +383,33 @@ struct LogView: View {
     }
 
     private var logHistory: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Recent workouts", action: nil)
+            if appState.workouts.isEmpty {
+                EmptyStateCard(
+                    systemImage: "figure.strengthtraining.traditional",
+                    title: "No workouts yet",
+                    subtitle: "Your saved workouts will show up here.",
+                    tint: .orange
+                )
+            }
             ForEach(appState.workouts) { workout in
                 formCard {
-                    HStack {
-                        Text(workout.title).font(.headline)
+                    HStack(spacing: 12) {
+                        Image(systemName: "dumbbell.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(Color.orange)
+                            .frame(width: 36, height: 36)
+                            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        Text(workout.title)
+                            .font(.system(.headline, design: .rounded, weight: .bold))
                         Spacer()
                         Text("\(workout.durationMinutes)m")
-                        .foregroundStyle(Color.fitMuted)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.fitMuted)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color.fitMuted.opacity(0.12), in: Capsule())
                     }
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(workout.compactSetSummaries, id: \.self) { summary in
@@ -403,15 +424,40 @@ struct LogView: View {
     }
 
     private var mealHistory: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Recent meals", action: nil)
+            if appState.meals.isEmpty {
+                EmptyStateCard(
+                    systemImage: "fork.knife",
+                    title: "No meals yet",
+                    subtitle: "Your saved meals will show up here.",
+                    tint: .fitBlue
+                )
+            }
             ForEach(appState.meals) { meal in
                 formCard {
-                    Text(meal.mealType.rawValue).font(.headline)
-                    Text("\(meal.totalCalories) cal • \(Int(meal.totalProtein))g protein • \(Int(meal.totalCarbs))g carbs • \(Int(meal.totalFat))g fat")
+                    HStack(spacing: 12) {
+                        Image(systemName: "fork.knife")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(Color.fitBlue)
+                            .frame(width: 36, height: 36)
+                            .background(Color.fitBlue.opacity(0.11), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        Text(meal.mealType.rawValue)
+                            .font(.system(.headline, design: .rounded, weight: .bold))
+                        Spacer()
+                        Text("\(meal.totalCalories) cal")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.fitGreen)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color.fitGreen.opacity(0.12), in: Capsule())
+                    }
+                    Text("\(Int(meal.totalProtein))g protein • \(Int(meal.totalCarbs))g carbs • \(Int(meal.totalFat))g fat")
+                        .font(.subheadline)
                         .foregroundStyle(Color.fitMuted)
                     Text(meal.items.map(\.name).joined(separator: ", "))
                         .font(.footnote)
+                        .foregroundStyle(Color.fitMuted)
                 }
             }
         }

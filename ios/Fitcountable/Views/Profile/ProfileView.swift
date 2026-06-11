@@ -27,6 +27,7 @@ struct ProfileView: View {
                     support
                 }
                 .padding()
+                .padding(.bottom, 52)
             }
             .background(Color.fitSurface.ignoresSafeArea())
             .navigationTitle("Profile")
@@ -66,7 +67,7 @@ struct ProfileView: View {
                 ProfilePhotoView(imageData: appState.profilePhotoData, fallback: appState.profile.displayName, size: 72)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(appState.profile.displayName)
-                        .font(.largeTitle.bold())
+                        .font(.system(.largeTitle, design: .rounded, weight: .black))
                     Text("\(appState.profile.goalType.rawValue) • \(appState.profile.trainingExperience)")
                         .foregroundStyle(Color.fitMuted)
                     PhotosPicker(selection: $selectedProfilePhoto, matching: .images) {
@@ -190,7 +191,7 @@ struct ProfileView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Fitcountable Premium")
-                        .font(.title3.bold())
+                        .font(.system(.title3, design: .rounded, weight: .black))
                     Text(appState.isPremium || appState.purchaseService.entitlementActive ? "Premium is active." : "More AI logs, deeper history, and smarter plans.")
                         .font(.subheadline)
                         .foregroundStyle(Color.fitMuted)
@@ -211,7 +212,7 @@ struct ProfileView: View {
     private var account: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Account")
-                .font(.headline)
+                .font(.system(.title3, design: .rounded, weight: .bold))
             if let session = appState.authSession {
                 Text(session.email.localizedCaseInsensitiveContains("@fitcountable.local") ? "Signed in with Apple." : "Signed in as \(session.email)")
                     .font(.subheadline)
@@ -271,7 +272,7 @@ struct ProfileView: View {
     private var support: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Support and policies")
-                .font(.headline)
+                .font(.system(.title3, design: .rounded, weight: .bold))
             Link(destination: URL(string: "mailto:aki.b@pentridgemedia.com")!) {
                 Label("aki.b@pentridgemedia.com", systemImage: "envelope")
             }
