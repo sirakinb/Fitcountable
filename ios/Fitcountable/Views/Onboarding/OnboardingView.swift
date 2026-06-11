@@ -102,33 +102,47 @@ struct OnboardingView: View {
 
     private var welcome: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Image("MascotIcon")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 128, height: 128)
-                    .clipShape(RoundedRectangle(cornerRadius: 28))
-                    .shadow(color: Color.fitGreen.opacity(0.22), radius: 24, y: 12)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 24)
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("AI-NATIVE FITNESS ACCOUNTABILITY")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color.fitBlue)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Log workouts and meals by saying what happened.")
-                        .font(.largeTitle.bold())
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(spacing: 16) {
+                    Image("MascotIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 118, height: 118)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 18, y: 9)
+                    Text("FITCOUNTABLE")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .tracking(2.2)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 34)
+                .background(Color.fitGreen, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .shadow(color: Color.fitGreen.opacity(0.28), radius: 20, y: 10)
+                .padding(.top, 10)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    EyebrowText(text: "AI-native fitness accountability", color: .fitBlue)
+                    Text("Say what happened. We log it.")
+                        .font(.system(size: 36, weight: .black, design: .rounded))
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Fitcountable turns natural language into editable workout, nutrition, and accountability records.")
+                    Text("Speak or type your workouts and meals in plain language. Fitcountable drafts the log — you review and save.")
                         .font(.title3)
                         .foregroundStyle(Color.fitMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 8)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    WelcomeFeatureRow(icon: "mic.fill", tint: .fitGreen, text: "\u{201C}Bench 185 for 5x5, then incline dumbbells\u{201D}")
+                    WelcomeFeatureRow(icon: "fork.knife", tint: .fitBlue, text: "\u{201C}Jollof rice with goat meat for dinner\u{201D}")
+                    WelcomeFeatureRow(icon: "person.2.fill", tint: .orange, text: "Share proof with friends — private by default")
+                }
+                .padding(18)
+                .fitCardSurface()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
-            .padding(.top, 10)
+            .padding(.top, 6)
         }
     }
 
@@ -160,7 +174,7 @@ struct OnboardingView: View {
                 }
             }
                 .frame(height: 52)
-                .cornerRadius(8)
+                .cornerRadius(14)
                 .disabled(appState.isSigningInWithApple)
             HStack(spacing: 10) {
                 if appState.isSigningInWithApple {
@@ -171,6 +185,25 @@ struct OnboardingView: View {
                     .font(.footnote)
                     .foregroundStyle(appState.authSession == nil ? Color.fitMuted : Color.fitGreen)
             }
+            #if targetEnvironment(simulator)
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                Text("SIMULATOR ONLY")
+                    .font(.caption2.weight(.heavy))
+                    .foregroundStyle(Color.fitMuted)
+                    .tracking(1.2)
+                Button {
+                    Task {
+                        await appState.signIn(email: "sirakinb@gmail.com", password: "123456")
+                    }
+                } label: {
+                    Label("Sign in with developer test account", systemImage: "hammer.fill")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.fitBlue)
+            }
+            #endif
         }
         .padding(24)
     }
@@ -346,6 +379,26 @@ struct OnboardingView: View {
         case .maintain: "Consistency maintenance routine"
         case .recomp: "Strength and macro balance"
         case .consistency: "Accountability-first routine"
+        }
+    }
+}
+
+private struct WelcomeFeatureRow: View {
+    var icon: String
+    var tint: Color
+    var text: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.12), in: Circle())
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.fitMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

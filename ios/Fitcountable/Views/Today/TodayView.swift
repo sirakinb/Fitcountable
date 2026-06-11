@@ -14,12 +14,11 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 22) {
                     heroHeader
-                    WeekConsistencyStrip(completedIndexes: completedDayIndexes)
                     CommandBar()
-                    caloriesCard
-                    macrosCard
+                    dailyRingCard
+                    weekCard
                     quickActions
                     if appState.shouldShowUpgradePrompt {
                         upgradePrompt
@@ -28,6 +27,7 @@ struct TodayView: View {
                     workoutSection
                 }
                 .padding()
+                .padding(.bottom, 52)
             }
             .background(
                 LinearGradient(colors: [Color.fitMist, Color.fitSurface], startPoint: .top, endPoint: .center)
@@ -69,81 +69,67 @@ struct TodayView: View {
         }
     }
 
-    private var caloriesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var dailyRingCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("Calories")
-                    .font(.headline)
+                EyebrowText(text: "Daily fuel")
                 Spacer()
-                Text("\(appState.caloriesRemaining) left")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.fitMuted)
+                Button {
+                    appState.selectedTab = .profile
+                } label: {
+                    Label("Edit targets", systemImage: "slider.horizontal.3")
+                        .font(.caption.weight(.bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.fitBlue)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(appState.caloriesConsumed)")
-                    .font(.system(.largeTitle, design: .rounded, weight: .black))
-                Text("cal / \(appState.goal.calories)")
-                    .font(.title3.weight(.medium))
-                    .foregroundStyle(Color.fitMuted)
+
+            HStack(spacing: 22) {
+                CaloriesRing(consumed: appState.caloriesConsumed, goal: appState.goal.calories)
+                    .frame(width: 132, height: 132)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(appState.caloriesConsumed)")
+                            .font(.system(.title2, design: .rounded, weight: .black))
+                            .contentTransition(.numericText())
+                        Text("eaten")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.fitMuted)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(appState.goal.calories)")
+                            .font(.system(.title2, design: .rounded, weight: .black))
+                        Text("daily goal")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.fitMuted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            ProgressView(value: Double(appState.caloriesConsumed), total: Double(max(appState.goal.calories, 1)))
-                .tint(.fitBlue)
-                .scaleEffect(x: 1, y: 1.8, anchor: .center)
+
+            VStack(spacing: 14) {
+                ForEach(macroSegments) { macro in
+                    MacroBar(title: macro.title, consumed: macro.consumed, goal: macro.goal, color: macro.color)
+                }
+            }
         }
         .padding(22)
         .fitCardSurface()
     }
 
-    private var macrosCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var weekCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Macros")
-                    .font(.headline)
+                EyebrowText(text: "This week")
                 Spacer()
-                Button {
-                    appState.selectedTab = .profile
-                } label: {
-                    Image(systemName: "arrow.left.arrow.right")
-                }
-                .buttonStyle(.bordered)
-                .clipShape(Circle())
+                Text("\(completedDayIndexes.count) of \(appState.goal.weeklyWorkouts) workouts")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(completedDayIndexes.count >= appState.goal.weeklyWorkouts ? Color.fitGreen : Color.fitMuted)
             }
-
-            HStack(spacing: 18) {
-                ForEach(macroSegments) { macro in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 5) {
-                            Text(macro.title)
-                                .font(.subheadline.weight(.semibold))
-                            Circle()
-                                .fill(macro.color)
-                                .frame(width: 6, height: 6)
-                        }
-                        Text("\(macro.consumed) g")
-                            .font(.title3.bold())
-                        Text("/ \(macro.goal)")
-                            .font(.caption)
-                            .foregroundStyle(Color.fitMuted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
-            GeometryReader { proxy in
-                HStack(spacing: 0) {
-                    ForEach(macroSegments) { macro in
-                        Rectangle()
-                            .fill(macro.color)
-                            .frame(width: segmentWidth(macro, in: proxy.size.width))
-                    }
-                    Spacer(minLength: 0)
-                }
-                .background(Color.fitMuted.opacity(0.15))
-                .clipShape(Capsule())
-            }
-            .frame(height: 10)
+            WeekConsistencyStrip(completedIndexes: completedDayIndexes)
         }
-        .padding(22)
+        .padding(18)
         .fitCardSurface()
     }
 
@@ -225,13 +211,6 @@ struct TodayView: View {
     private func latestMeal(for type: MealType) -> MealLog? {
         appState.meals.first { $0.mealType == type }
     }
-
-    private func segmentWidth(_ macro: MacroSegment, in totalWidth: CGFloat) -> CGFloat {
-        let totalConsumed = max(macroSegments.reduce(0) { $0 + $1.consumed }, 1)
-        let share = CGFloat(macro.consumed) / CGFloat(totalConsumed)
-        let progress = min(CGFloat(macro.consumed) / CGFloat(max(macro.goal, 1)), 1)
-        return max(8, totalWidth * share * progress)
-    }
 }
 
 private struct MacroSegment: Identifiable {
@@ -292,20 +271,21 @@ private struct QuickActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .background(color, in: Circle())
+                    .font(.headline.bold())
+                    .foregroundStyle(color)
+                    .frame(width: 40, height: 40)
+                    .background(color.opacity(0.13), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 Text(title)
-                    .font(.headline)
+                    .font(.system(.headline, design: .rounded, weight: .bold))
                     .foregroundStyle(Color.fitInk)
             }
-            .frame(maxWidth: .infinity, minHeight: 116)
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
             .fitCardSurface()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FitPressableButtonStyle())
     }
 }
 
@@ -317,9 +297,10 @@ private struct MealDiaryRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: iconName)
-                .font(.title3)
+                .font(.subheadline.bold())
                 .foregroundStyle(Color.fitBlue)
-                .frame(width: 30)
+                .frame(width: 38, height: 38)
+                .background(Color.fitBlue.opacity(0.11), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(mealType.rawValue)
                     .font(.headline)
